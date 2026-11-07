@@ -1,5 +1,21 @@
 import { describeActions, TONE } from '../lib/format.js'
 
+// Render a simulation violation. The real simulator (Mariam's simulate_plan)
+// attaches a human-readable `message` to every violation written for display —
+// prefer it. Otherwise reconstruct text, handling both CAPACITY_EXCEEDED
+// (projected/capacity) and INSUFFICIENT_INVENTORY (available/requested) shapes.
+function violationText(v) {
+  if (v.message) return v.message
+  const where = typeof v.action_index === 'number' ? ` (action ${v.action_index + 1})` : ''
+  if (v.code === 'INSUFFICIENT_INVENTORY' || v.code === 'INSUFFICIENT_SOURCE') {
+    return `${v.code} — Zone ${v.zone} has ${v.available ?? v.projected}, needs ${v.requested ?? ''}${where}`
+  }
+  if (v.capacity != null) {
+    return `${v.code} — Zone ${v.zone} would reach ${v.projected} / ${v.capacity}${where}`
+  }
+  return `${v.code} — Zone ${v.zone ?? ''}${where}`
+}
+
 // The most important surface (timeline §4.3 / PRD FR04, FR11): shows each AI
 // candidate with its authorization + simulation result, side by side, so a
 // judge can see WHY a plan was rejected and HOW the revision fixed it.
@@ -55,8 +71,7 @@ function CandidatePanel({ candidate, isActive }) {
           <ul className="space-y-1">
             {sim?.violations.map((v, i) => (
               <li key={i} className="rounded-md border border-status-red/30 bg-status-red/10 p-2 text-xs text-status-red">
-                {v.code} — Zone {v.zone} would reach {v.projected} / {v.capacity}
-                {typeof v.action_index === 'number' ? ` (action ${v.action_index + 1})` : ''}
+                {violationText(v)}
               </li>
             ))}
           </ul>

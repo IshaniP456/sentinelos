@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { describeActions } from '../lib/format.js'
 
 // Human-approval interface (PRD FR07). The modal shows the exact revision,
@@ -6,18 +6,24 @@ import { describeActions } from '../lib/format.js'
 // forward the approval_id to the trusted backend — the browser never sees or
 // sends a Step Functions task token (contract §8, NFR01).
 export default function ApprovalModal({ plan, onApprove, onDeny, busy }) {
-  const [decided, setDecided] = useState(false)
+  // Blocks a repeat click within one decision cycle. It resets as soon as the
+  // decision settles: on success the plan advances and this modal unmounts; on
+  // error `busy` clears, re-enabling the buttons so the admin can retry (fixes
+  // "buttons stay disabled after a decision"). The backend is also idempotent,
+  // so even a race cannot double-execute (contract §3.5).
+  const inFlight = useRef(false)
+  useEffect(() => {
+    if (!busy) inFlight.current = false
+  }, [busy])
 
   if (!plan || plan.status !== 'AWAITING_APPROVAL' || !plan.approval) return null
 
   const candidate = plan.candidates.find((c) => c.revision === plan.approval.revision)
   if (!candidate) return null
 
-  // Guard against double-submit producing duplicate executions (contract test
-  // "Double-click Approve → no duplicate execution").
   const decide = (fn) => {
-    if (decided || busy) return
-    setDecided(true)
+    if (inFlight.current || busy) return
+    inFlight.current = true
     fn(plan.approval.approval_id)
   }
 
@@ -55,11 +61,11 @@ export default function ApprovalModal({ plan, onApprove, onDeny, busy }) {
           </p>
         </div>
         <div className="flex gap-3 border-t border-ink-600 px-5 py-3">
-          <button className="btn-ghost flex-1" onClick={() => decide(onDeny)} disabled={decided || busy}>
+          <button className="btn-ghost flex-1" onClick={() => decide(onDeny)} disabled={busy}>
             Deny
           </button>
-          <button className="btn-primary flex-1" onClick={() => decide(onApprove)} disabled={decided || busy}>
-            {decided ? 'Submitting…' : 'Approve'}
+          <button className="btn-primary flex-1" onClick={() => decide(onApprove)} disabled={busy}>
+            {busy ? 'Submitting…' : 'Approve'}
           </button>
         </div>
       </div>

@@ -12,6 +12,13 @@ import AgentControls from './components/AgentControls.jsx'
 
 const POLL_MS = 2000
 
+// Persist the active plan id so a page refresh can recover an in-flight or
+// pending-approval plan (PRD FR11 "active plan can be retrieved" / NFR03).
+const PLAN_KEY = 'sentinel.active_plan_id'
+const savePlanId = (id) => { try { localStorage.setItem(PLAN_KEY, id) } catch { /* ignore */ } }
+const loadPlanId = () => { try { return localStorage.getItem(PLAN_KEY) } catch { return null } }
+const clearPlanId = () => { try { localStorage.removeItem(PLAN_KEY) } catch { /* ignore */ } }
+
 // Turn the standard error object (contract §3.6) into a readable message.
 function errMessage(e) {
   return e?.payload?.error?.message || e?.message || 'Something went wrong.'
@@ -39,9 +46,28 @@ export default function App() {
     }
   }, [])
 
-  // Initial load.
+  // Initial load — fetch static state, then rehydrate any persisted plan so a
+  // refresh recovers an active/pending plan (PRD FR11 / NFR03).
   useEffect(() => {
-    refreshStatic()
+    let cancelled = false
+    ;(async () => {
+      await refreshStatic()
+      const storedId = loadPlanId()
+      if (!storedId) return
+      try {
+        const status = await api.getPlanStatus(storedId)
+        if (!cancelled) {
+          planIdRef.current = storedId
+          setPlan(status)
+        }
+      } catch {
+        // Stale id (e.g. after a reset or backend restart) — drop it quietly.
+        clearPlanId()
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [refreshStatic])
 
   // Poll the active plan every 2s while it is non-terminal (PRD FR11 / §5.5).
@@ -71,6 +97,7 @@ export default function App() {
     try {
       const { plan_id } = await api.submitPlan(instruction)
       planIdRef.current = plan_id
+      savePlanId(plan_id)
       const status = await api.getPlanStatus(plan_id)
       setPlan(status)
       const log = await api.getAuditLog()
@@ -122,6 +149,7 @@ export default function App() {
     try {
       await api.resetDemo()
       planIdRef.current = null
+      clearPlanId()
       setPlan(null)
       await refreshStatic()
     } catch (e) {
@@ -165,7 +193,7 @@ export default function App() {
               plan={plan}
               submitting={submitting}
               error={null}
-              disabled={agentRevoked}
+              revoked={agentRevoked}
             />
           </div>
           <WorkflowStatus plan={plan} />

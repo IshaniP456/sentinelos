@@ -12,13 +12,18 @@ const PRESETS = [
 
 // The AI instruction console. The browser submits ONLY the instruction string
 // (contract §2.4) — the backend assigns plan_id, agent, revisions, etc.
-export default function AgentConsole({ onSubmit, plan, submitting, error, disabled }) {
+//
+// NOTE: when the agent is revoked we deliberately KEEP submission enabled. The
+// backend must be the thing that denies the request (returns AGENT_REVOKED) —
+// disabling the button would only hide the denial, which is exactly what
+// Demo 3 needs to show (timeline Phase 4). `revoked` is informational only.
+export default function AgentConsole({ onSubmit, plan, submitting, error, revoked }) {
   const [text, setText] = useState('')
 
   const handleSubmit = (e) => {
     e.preventDefault()
     const instruction = text.trim()
-    if (!instruction || submitting || disabled) return
+    if (!instruction || submitting) return
     onSubmit(instruction)
   }
 
@@ -42,16 +47,15 @@ export default function AgentConsole({ onSubmit, plan, submitting, error, disabl
           placeholder="e.g. Move three packages from Zone A to Zone C."
           value={text}
           onChange={(e) => setText(e.target.value)}
-          disabled={disabled}
         />
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button type="submit" className="btn-primary" disabled={submitting || disabled || !text.trim()}>
+          <button type="submit" className="btn-primary" disabled={submitting || !text.trim()}>
             {submitting ? 'Submitting…' : 'Submit Instruction'}
           </button>
-          {disabled && (
-            <span className="text-xs text-status-red">
-              Agent revoked — new instructions are denied by authorization.
+          {revoked && (
+            <span className="text-xs text-status-amber">
+              Agent is revoked — submitting is allowed, but the backend will deny it (expected for Demo 3).
             </span>
           )}
         </div>
@@ -66,7 +70,6 @@ export default function AgentConsole({ onSubmit, plan, submitting, error, disabl
               type="button"
               className="rounded-md border border-ink-500 bg-ink-700 px-2.5 py-1 text-xs text-slate-300 hover:bg-ink-600 disabled:opacity-40"
               onClick={() => setText(p.text)}
-              disabled={disabled}
             >
               {p.label}
             </button>
