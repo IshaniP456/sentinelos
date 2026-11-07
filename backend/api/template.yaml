@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SentinelOS frontend-facing API (Ishani) — API Gateway + one Lambda running
+  the handlers in this directory. Deploys standalone so the HTTP layer can go
+  live before the rest of the backend. The shared SAM template / IAM is
+  coordinated by Tishneet (contract §9.2); this stack is scoped to the API.
+
+Parameters:
+  Backend:
+    Type: String
+    Default: local
+    AllowedValues: [local, aws]
+    Description: >
+      local = in-process reference backend (reproduces D1/D2/D3, no AWS
+      dependencies — good for a first deploy). aws = call the real Step
+      Functions workflow + teammate Lambdas via the *Fn parameters below.
+  AuthMode:
+    Type: String
+    Default: dev
+    AllowedValues: [prod, dev, open]
+    Description: >
+      prod = require an admin claim from an API Gateway authorizer (final
+      mechanism, decide with Mariam). dev = X-Admin-Token header. open = no
+      admin check (local UI demos only — never for judging).
+  AdminToken:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: Shared secret for AuthMode=dev (sent as X-Admin-Token). Never shipped to the browser.
+  CorsOrigin:
+    Type: String
+    Default: http://localhost:5173
+    Description: Exact browser origin allowed (credentialed CORS forbids '*').
+  StateMachineArn:
+    Type: String
+    Default: ''
+    Description: Tishneet's planning Step Functions state machine ARN (Backend=aws).
+  WarehouseFn:
+    Type: String
+    Default: ''
+    Description: Mariam's get_warehouse Lambda name/ARN.
+  AgentFn:
+    Type: String
+    Default: ''
+    Description: Mariam's get_agent Lambda name/ARN.
+  AuditFn:
+    Type: String
+    Default: ''
+    Description: Mariam's audit-query Lambda name/ARN.
+  PlanStatusFn:
+    Type: String
+    Default: ''
+    Description: Tishneet's plan-status (PlanStatus §5.1) Lambda name/ARN.
+  ApprovalFn:
+    Type: String
+    Default: ''
+    Description: Trusted approval-callback Lambda (resumes Step Functions) name/ARN.
+  RevokeFn:
+    Type: String
+    Default: ''
+    Description: Mariam's revoke_agent Lambda name/ARN.
+  ResetFn:
+    Type: String
+    Default: ''
+    Description: Mariam's reset_demo Lambda name/ARN.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 29        # API Gateway REST integration max
+    MemorySize: 256
+
+Resources:
+  SentinelApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: v1
+      # CORS (headers + OPTIONS preflight) is handled by the Lambda itself so
+      # that credentialed requests get a single, correct set of headers.
+      # Intentionally NOT setting the Cors property here to avoid duplicates.
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handlers.handler
+      Environment:
+        Variables:
+          SENTINEL_BACKEND: !Ref Backend
+          SENTINEL_AUTH_MODE: !Ref AuthMode
+          SENTINEL_ADMIN_TOKEN: !Ref AdminToken
+          SENTINEL_CORS_ORIGIN: !Ref CorsOrigin
+          STATE_MACHINE_ARN: !Ref StateMachineArn
+          WAREHOUSE_FN: !Ref WarehouseFn
+          AGENT_FN: !Ref AgentFn
+          AUDIT_FN: !Ref AuditFn
+          PLAN_STATUS_FN: !Ref PlanStatusFn
+          APPROVAL_FN: !Ref ApprovalFn
+          REVOKE_FN: !Ref RevokeFn
+          RESET_FN: !Ref ResetFn
+      Policies:
+        # Broad for the hackathon; tighten Resource to the specific state
+        # machine + teammate function ARNs once they are known.
+        - Statement:
+            - Effect: Allow
+              Action: states:StartExecution
+              Resource: '*'
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: '*'
+      Events:
+        Root:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SentinelApi
+            Path: /
+            Method: ANY
+        Proxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SentinelApi
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  ApiBaseUrl:
+    Description: Use as VITE_API_BASE_URL in the frontend (.env / Amplify).
+    Value: !Sub 'https://${SentinelApi}.execute-api.${AWS::Region}.amazonaws.com/v1'

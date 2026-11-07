@@ -1,0 +1,3 @@
+# No third-party dependencies. The handlers use only the Python standard
+# library; boto3 (for the AWS backend) is provided by the Lambda runtime.
+# This file exists so `sam build` has an explicit (empty) dependency manifest.

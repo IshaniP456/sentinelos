@@ -18,9 +18,14 @@ Routing:
 
 import json
 
-from .auth import require_admin
-from .backend_ops import get_backend
-from .responses import ApiError, ok, preflight, error
+try:  # package context (local: python -m backend.api.*)
+    from .auth import require_admin
+    from .backend_ops import get_backend
+    from .responses import ApiError, ok, preflight, error
+except ImportError:  # flat context (deployed Lambda, CodeUri=backend/api)
+    from auth import require_admin
+    from backend_ops import get_backend
+    from responses import ApiError, ok, preflight, error
 
 
 def _body(event):

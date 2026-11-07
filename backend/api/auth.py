@@ -25,7 +25,10 @@ holds a credential that grants admin authority. The two supported modes:
 
 import os
 
-from .responses import ApiError
+try:  # package (local) vs flat (deployed Lambda)
+    from .responses import ApiError
+except ImportError:
+    from responses import ApiError
 
 AUTH_MODE = os.environ.get("SENTINEL_AUTH_MODE", "prod")
 

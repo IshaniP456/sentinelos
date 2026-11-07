@@ -85,14 +85,48 @@ Functions, DynamoDB, or Verified Permissions directly.
 
 `handler(event, context)` in `handlers.py` is the single Lambda proxy entry
 point; it routes all eight endpoints internally (the timeline permits sharing
-one Lambda). Wire API Gateway with Lambda-proxy integration for the routes in
-the table above, pointing every route at this one function — or split the
-per-endpoint functions into separate Lambdas later if preferred.
+one Lambda). `template.yaml` in this directory is a self-contained SAM stack:
+one `AWS::Serverless::Function` behind an API Gateway REST API, with a catch-all
+`ANY /{proxy+}` route so the Lambda does its own routing + CORS.
 
-> The shared `template.yaml` / IAM resources are edited by one integration
-> editor at a time, coordinated by Tishneet (contract §9.2). Hand this route
-> table + the `prod` authorizer requirement to that process rather than
-> editing the shared template unilaterally.
+```bash
+cd backend/api
+sam validate
+sam build
+# first time (interactive): pick a stack name + region with Bedrock access
+sam deploy --guided \
+  --parameter-overrides Backend=local AuthMode=dev AdminToken=<pick-a-secret>
+# the output ApiBaseUrl is your VITE_API_BASE_URL (ends in /v1)
+```
+
+Deploy in stages:
+1. **`Backend=local`** first — the API goes live immediately using the
+   in-process reference backend (reproduces D1/D2/D3). Point the frontend at
+   `ApiBaseUrl`, set `VITE_MOCK=false`, and you have a real cloud API with no
+   other backend needed.
+2. **`Backend=aws`** once teammates share ARNs — pass them as parameters:
+   `StateMachineArn` (Tishneet), `PlanStatusFn`/`ApprovalFn` (Tishneet),
+   `WarehouseFn`/`AgentFn`/`AuditFn`/`RevokeFn`/`ResetFn` (Mariam). No code
+   change — the `AwsBackendOps` seam reads them from env vars.
+
+Stack parameters (all have safe defaults):
+
+| Parameter | Purpose |
+|-----------|---------|
+| `Backend` | `local` (reference) or `aws` (real workflow + teammate Lambdas) |
+| `AuthMode` | `prod` (authorizer claim) / `dev` (`X-Admin-Token`) / `open` (no check) |
+| `AdminToken` | secret for `dev` mode; `NoEcho`, never shipped to the browser |
+| `CorsOrigin` | exact allowed origin (set to the Amplify URL in prod) |
+| `StateMachineArn` | Tishneet's planning Step Functions machine |
+| `PlanStatusFn` / `ApprovalFn` | Tishneet's status + approval-callback Lambdas |
+| `WarehouseFn` / `AgentFn` / `AuditFn` / `RevokeFn` / `ResetFn` | Mariam's trusted data/security Lambdas |
+
+> The IAM policy grants `states:StartExecution` and `lambda:InvokeFunction` on
+> `*` for speed — **tighten `Resource` to the specific ARNs before judging.**
+> `AuthMode=prod` needs an API Gateway authorizer (Cognito or Lambda) — the
+> admin-auth kickoff decision with Mariam. For the shared root `template.yaml`
+> / IAM, coordinate with Tishneet (contract §9.2); this stack is deliberately
+> scoped to just the API so it can ship independently.
 
 ## Security notes honored
 

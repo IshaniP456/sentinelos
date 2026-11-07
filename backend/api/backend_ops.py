@@ -22,7 +22,10 @@ import copy
 import os
 import time
 
-from .responses import ApiError
+try:  # package (local) vs flat (deployed Lambda)
+    from .responses import ApiError
+except ImportError:
+    from responses import ApiError
 
 # ---------------------------------------------------------------------------
 # Frozen seed state (contract §2). Kept in sync with the frontend mock.
@@ -373,44 +376,92 @@ class LocalBackendOps(BackendOps):
 
 
 class AwsBackendOps(BackendOps):
-    """Production seam — fill in as teammates' services land. Each method notes
-    the trusted operation it must invoke. The HTTP layer never changes."""
+    """Production seam: HTTP layer -> trusted AWS operations.
+
+    - ``start_plan`` starts Tishneet's planning Step Functions state machine
+      (which is what invokes Bedrock). The browser's request never touches the
+      model — contract's "AI proposes; backend decides" boundary.
+    - Status/data operations invoke the trusted Lambdas owned by Mariam and
+      Tishneet. Their function names/ARNs arrive as environment variables set
+      at deploy time (see template.yaml), so this layer compiles and deploys
+      with zero teammate code. Until a given env var is set, that endpoint
+      returns a clear "not configured" error instead of failing silently.
+
+    The client never chooses the principal: the acting agent id is selected
+    server-side (contract §1).
+    """
+
+    def __init__(self):
+        import boto3  # provided by the Lambda runtime; not needed in local mode
+
+        self._sfn = boto3.client("stepfunctions")
+        self._lambda = boto3.client("lambda")
+        self._state_machine = os.environ.get("STATE_MACHINE_ARN")
+        self._agent_id = os.environ.get("SENTINEL_AGENT_ID", "inventory-agent-01")
+
+    def _invoke(self, env_var, payload):
+        """Invoke a teammate's trusted Lambda by name (from an env var) and
+        return its JSON result, translating failures into standard errors."""
+        import json as _json
+
+        fn = os.environ.get(env_var)
+        if not fn:
+            raise ApiError("INTERNAL_ERROR", f"Backend function {env_var} not configured.", status=501)
+        resp = self._lambda.invoke(FunctionName=fn, Payload=_json.dumps(payload).encode())
+        raw = resp["Payload"].read()
+        data = _json.loads(raw) if raw else None
+        if resp.get("FunctionError"):
+            msg = (data or {}).get("errorMessage", "Backend operation failed.")
+            raise ApiError("INTERNAL_ERROR", msg, status=502)
+        # Allow the trusted function to return a standard error object (§3.6).
+        if isinstance(data, dict) and "error" in data:
+            e = data["error"]
+            raise ApiError(e.get("code", "INTERNAL_ERROR"), e.get("message", "Backend error."))
+        return data
 
     def start_plan(self, instruction):
-        # TODO(Tishneet): StartExecution on the planning Step Functions state
-        # machine with input {"instruction": instruction, "agent_id": <trusted>}.
-        # Return {"plan_id": <execution name>, "status": "PLANNING"}.
-        raise ApiError("INTERNAL_ERROR", "AWS backend not wired yet.", status=501)
+        if not instruction or not instruction.strip():
+            raise ApiError("INVALID_REQUEST", "Instruction must not be empty.")
+        if not self._state_machine:
+            raise ApiError("INTERNAL_ERROR", "STATE_MACHINE_ARN not configured.", status=501)
+        import json as _json
+        import uuid
+
+        # The handler assigns plan_id and returns it immediately (202); the
+        # workflow runs asynchronously under the same id (contract §2.4).
+        plan_id = "plan-" + uuid.uuid4().hex[:12]
+        self._sfn.start_execution(
+            stateMachineArn=self._state_machine,
+            name=plan_id,
+            input=_json.dumps({"plan_id": plan_id, "agent_id": self._agent_id, "instruction": instruction}),
+        )
+        return {"plan_id": plan_id, "status": "PLANNING"}
 
     def get_plan_status(self, plan_id):
-        # TODO(Tishneet): read workflow status + candidate history; shape to §5.1.
-        raise ApiError("INTERNAL_ERROR", "AWS backend not wired yet.", status=501)
+        # Tishneet exposes the workflow status/history shaped to PlanStatus (§5.1).
+        return self._invoke("PLAN_STATUS_FN", {"plan_id": plan_id})
 
     def get_warehouse(self):
-        # TODO(Mariam): get_warehouse() from DynamoDB (§2.1).
-        raise ApiError("INTERNAL_ERROR", "AWS backend not wired yet.", status=501)
+        return self._invoke("WAREHOUSE_FN", {})  # Mariam: get_warehouse (§2.1)
 
     def get_agent(self):
-        # TODO(Mariam): get_agent() from DynamoDB (§2.2).
-        raise ApiError("INTERNAL_ERROR", "AWS backend not wired yet.", status=501)
+        return self._invoke("AGENT_FN", {})  # Mariam: get_agent (§2.2)
 
     def get_audit(self, plan_id=None):
-        # TODO(Mariam): query sentinel_audit (indexed, not a full scan — §5.2).
-        raise ApiError("INTERNAL_ERROR", "AWS backend not wired yet.", status=501)
+        return self._invoke("AUDIT_FN", {"plan_id": plan_id})  # Mariam: audit (§5.2)
 
     def record_approval(self, approval_id, decision, admin):
-        # TODO(Tishneet/Mariam): resolve approval_id -> stored task token and
-        # SendTaskSuccess/Failure on Step Functions. Token stays server-side
-        # (contract §8/NFR01). Record deciding admin in the approval record.
-        raise ApiError("INTERNAL_ERROR", "AWS backend not wired yet.", status=501)
+        # Tishneet/Mariam: resolve approval_id -> stored Step Functions task
+        # token and resume the workflow. Token stays server-side (§8/NFR01).
+        if decision not in ("APPROVED", "DENIED"):
+            raise ApiError("INVALID_REQUEST", "decision must be APPROVED or DENIED.")
+        return self._invoke("APPROVAL_FN", {"approval_id": approval_id, "decision": decision, "admin": admin})
 
     def revoke_agent(self, admin):
-        # TODO(Mariam): trusted revoke_agent() — set status REVOKED in DynamoDB.
-        raise ApiError("INTERNAL_ERROR", "AWS backend not wired yet.", status=501)
+        return self._invoke("REVOKE_FN", {"admin": admin})  # Mariam: revoke_agent
 
     def reset_demo(self, admin):
-        # TODO(Mariam): reset only when no active workflows (FR13).
-        raise ApiError("INTERNAL_ERROR", "AWS backend not wired yet.", status=501)
+        return self._invoke("RESET_FN", {"admin": admin})  # Mariam: reset (FR13)
 
 
 _SINGLETON = None

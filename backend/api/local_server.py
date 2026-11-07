@@ -22,7 +22,10 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-from .handlers import handler
+try:
+    from .handlers import handler
+except ImportError:
+    from handlers import handler
 
 PORT = int(os.environ.get("SENTINEL_API_PORT", "8000"))
 
