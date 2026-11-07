@@ -83,6 +83,28 @@ class DynamoWorkflowAcceptanceTests(unittest.TestCase):
         self.assertEqual(second.get_plan_status(plan_id)["status"], "EXPIRED")
         self.assertEqual(self.counts(second), (20, 8, 5, 1))
 
+    def test_remote_reset_ack_loss_survives_recreation_without_another_reset(self):
+        store = DynamoStore("workflows", client=self.client)
+        calls = []
+        class LostResetAck(FixtureGateway):
+            def reset_demo(gateway, control_version, control, admin):
+                calls.append(admin)
+                super().reset_demo(control_version, control, admin)
+                raise TimeoutError("Reply lost after reset commit")
+        first = WorkflowService(store, Planner(FixtureProvider()), LostResetAck(store), clock=lambda: self.now[0])
+        with self.assertRaises(WorkflowError) as error:
+            first.reset_demo("verified-admin")
+        self.assertEqual(error.exception.code, "RESET_UNCONFIRMED")
+        reset_id = store.read("CONTROL")[1]["reset"]["reset_id"]
+        second = self.make_service()
+        with self.assertRaises(WorkflowError) as blocked:
+            second.start_plan(D1)
+        self.assertEqual(blocked.exception.code, "RESET_IN_PROGRESS")
+        second.reconcile_reset(reset_id, "verified-admin")
+        self.assertEqual(calls, ["verified-admin"])
+        self.assertIsNone(store.read("CONTROL")[1]["reset"])
+        self.assertEqual(store.read("CONTROL")[1]["run_id"], second.gateway.get_run_id())
+
 
 if __name__ == "__main__":
     unittest.main()

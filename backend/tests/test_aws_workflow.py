@@ -365,12 +365,13 @@ class TemplateTests(unittest.TestCase):
         self.assertEqual(len(wildcard), 1)
         self.assertEqual(wildcard[0]["Action"], "states:SendTaskSuccess")
 
-    def test_model_and_trusted_adapters_are_explicit_parameters(self):
+    def test_model_is_explicit_and_gateway_defaults_match_team_contract(self):
         parameters = self.template["Parameters"]
-        for key in ("BedrockModelId", "BedrockModelArn", "BedrockUnderlyingModelArns",
-                    "TrustedAdapterModule", "TrustedFunctionArns"):
+        for key in ("BedrockModelId", "BedrockModelArn", "BedrockUnderlyingModelArns"):
             self.assertIn(key, parameters)
             self.assertNotIn("Default", parameters[key])
+        self.assertEqual(parameters["TrustedAdapterModule"]["Default"], "backend.security.gateway")
+        self.assertEqual(len(parameters["TrustedFunctionArns"]["Default"].split(",")), 6)
 
 
 if __name__ == "__main__":

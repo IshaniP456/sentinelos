@@ -91,7 +91,8 @@ class FixtureGateway:
         if warehouse["version"] != warehouse_version:
             raise WorkflowError("VERSION_CONFLICT", "Warehouse changed; evaluate again.", True, 409)
         total = sum(a["count"] for a in plan["actions"])
-        if total >= 5 and (not approval or approval.get("status") != "APPROVED"
+        if total >= 5 and (not approval or approval.get("decision") != "APPROVED"
+                           or approval.get("plan_id") != plan_id
                            or approval.get("revision") != revision
                            or approval.get("fingerprint") != digest
                            or approval.get("warehouse_version") != warehouse_version
@@ -131,10 +132,11 @@ class FixtureGateway:
                 continue
         raise WorkflowError("VERSION_CONFLICT", "Agent changed concurrently.", True, 409)
 
-    def reset_demo(self, control_version, control):
+    def reset_demo(self, control_version, control, admin):
+        if not isinstance(admin, str) or not admin.strip():
+            raise WorkflowError("FORBIDDEN", "Administrator identity required.", status=403)
         version, world = self.store.read("WORLD")
         new_world = seed_world()
-        control["run_id"] = new_world["run_id"]
-        self.store.transact([("WORLD", new_world, version),
-                             ("CONTROL", control, control_version)])
+        # Match the remote gateway: the orchestrator alone owns CONTROL.
+        self.store.write("WORLD", new_world, version)
         return new_world["warehouse"]

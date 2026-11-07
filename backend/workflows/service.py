@@ -8,6 +8,8 @@ from backend.ai.intent import parse_instruction, check_intent
 from backend.ai.risk import classify_risk
 from backend.ai.validation import validate_plan, fingerprint
 from .errors import WorkflowError
+from .gateway_contracts import normalize_run_id, execution_approval, confirmed_noncommit_error, NO_COMMIT_ERRORS
+from .reset import ResetCoordinator
 from .store import Conflict
 
 TERMINAL = {"COMPLETED", "REJECTED", "FAILED", "EXPIRED"}
@@ -35,9 +37,12 @@ class WorkflowService:
         version, control = store.read("CONTROL")
         if control is None:
             try:
-                store.write("CONTROL", {"run_id": gateway.get_run_id(), "active": []}, version)
+                store.write("CONTROL", {"run_id": self._run_id(), "active": []}, version)
             except Conflict:
                 pass
+
+    def _run_id(self):
+        return normalize_run_id(self.gateway.get_run_id())
 
     def _event(self, record, event_type, outcome="PENDING", code=None, message=None, admin=None):
         events = record.setdefault("_events", [])
@@ -49,10 +54,11 @@ class WorkflowService:
             event["admin"] = admin
         events.append(event)
 
-    def _finish(self, record, status, code, message):
+    def _finish(self, record, status, code, message, retryable=None):
         record["status"] = status
         record["error"] = {"code": code, "message": message,
-                           "retryable": code in {"VERSION_CONFLICT", "MODEL_ERROR", "DEPENDENCY_ERROR"}}
+                           "retryable": (code in {"VERSION_CONFLICT", "MODEL_ERROR", "DEPENDENCY_ERROR"}
+                                         if retryable is None else retryable)}
         self._event(record, "PLAN_" + status, status, code, message)
 
     def _execution_uncertain(self, record):
@@ -75,8 +81,10 @@ class WorkflowService:
         now = self.clock()
         for _ in range(8):
             cv, control = self.store.read("CONTROL")
+            if control.get("reset"):
+                raise WorkflowError("RESET_IN_PROGRESS", "Reset is active or unconfirmed; submissions are blocked.", status=409)
             warehouse = self.gateway.get_warehouse()
-            if self.gateway.get_run_id() != control["run_id"]:
+            if self._run_id() != control["run_id"]:
                 raise WorkflowError("VERSION_CONFLICT", "Demo run changed; retry submission.", True, 409)
             record = {"plan_id": plan_id, "status": "PLANNING", "agent_id": "inventory-agent-01",
                       "instruction": instruction.strip(), "attempt": 0,
@@ -172,13 +180,12 @@ class WorkflowService:
             if record["status"] not in TERMINAL:
                 self._advance(record)
         except WorkflowError as error:
-            no_commit = {"AUTHORIZATION_DENIED", "VERSION_CONFLICT", "APPROVAL_REQUIRED",
-                         "SIMULATION_FAILED", "PLAN_VALIDATION_FAILED", "EXECUTION_NOT_COMMITTED"}
+            no_commit = set(NO_COMMIT_ERRORS) | {"PLAN_VALIDATION_FAILED", "EXECUTION_NOT_COMMITTED"}
             if claimed_stage == "EXECUTING" and error.code not in no_commit:
                 self._execution_uncertain(record)
             else:
                 status = "REJECTED" if error.code == "AUTHORIZATION_DENIED" else "FAILED"
-                self._finish(record, status, error.code, error.message)
+                self._finish(record, status, error.code, error.message, retryable=error.retryable)
         except Exception:
             # Never persist model/provider exception strings, which may carry
             # prompt text, credentials or backend implementation details.
@@ -249,7 +256,7 @@ class WorkflowService:
         candidate = self._candidate(record)
         plan = candidate["plan"]
         if stage in {"AUTHORIZING", "REAUTHORIZING"}:
-            if self.gateway.get_run_id() != record["_run_id"]:
+            if self._run_id() != record["_run_id"]:
                 raise WorkflowError("VERSION_CONFLICT", "Demo run changed; evaluate again.", True, 409)
             result = self.gateway.authorize_plan(plan)
             if type(result.get("allowed")) is not bool or len(result.get("decisions", [])) != len(plan["actions"]):
@@ -306,9 +313,9 @@ class WorkflowService:
             result = self.gateway.execute_plan(
                 plan_id=record["plan_id"], revision=candidate["revision"], plan=plan,
                 warehouse_version=record["warehouse_version"], run_id=record["_run_id"],
-                approval=record["approval"])
+                approval=execution_approval(record))
             if isinstance(result, dict) and result.get("executed") is False and result.get("no_commit") is True:
-                raise WorkflowError("EXECUTION_NOT_COMMITTED", "Executor confirmed no inventory commit.")
+                raise confirmed_noncommit_error(result)
             if (not isinstance(result, dict) or result.get("executed") is not True
                     or result.get("status") != "COMPLETED"
                     or result.get("plan_id") != record["plan_id"]
@@ -359,7 +366,7 @@ class WorkflowService:
             if self.clock() >= approval["expires_epoch"]:
                 self.expire_approval(plan_id)
                 raise WorkflowError("APPROVAL_EXPIRED", "Approval expired.", status=409)
-            if (self.gateway.get_run_id() != record["_run_id"]
+            if (self._run_id() != record["_run_id"]
                     or self.gateway.get_warehouse()["version"] != record["warehouse_version"]):
                 self.fail_plan(plan_id, "VERSION_CONFLICT", "Warehouse changed after review; evaluate again.")
                 raise WorkflowError("VERSION_CONFLICT", "Warehouse changed after review; evaluate again.", True, 409)
@@ -391,7 +398,7 @@ class WorkflowService:
             decided = approval.get("status") in {"APPROVED", "DENIED"}
             if record["status"] != "AWAITING_APPROVAL" and not decided:
                 raise WorkflowError("APPROVAL_EXPIRED", "Plan is not awaiting approval.", status=409)
-            if self.gateway.get_run_id() != record["_run_id"]:
+            if self._run_id() != record["_run_id"]:
                 raise WorkflowError("VERSION_CONFLICT", "Demo run changed; callback is invalid.", status=409)
             previous = approval.get("callback_token")
             if previous and previous != token:
@@ -519,15 +526,7 @@ class WorkflowService:
         return sent
 
     def reset_demo(self, admin):
-        if not admin:
-            raise WorkflowError("FORBIDDEN", "Administrator identity required.", status=403)
-        for active in self.store.read("CONTROL")[1]["active"]:
-            if self._load(active)[1]["status"] in TERMINAL:
-                self._release_active(active)
-        version, control = self.store.read("CONTROL")
-        if control["active"]:
-            raise WorkflowError("VERSION_CONFLICT", "Cannot reset while any plan is active.", status=409)
-        try:
-            return self.gateway.reset_demo(version, control)
-        except Conflict:
-            raise WorkflowError("VERSION_CONFLICT", "A plan started during reset; retry later.", True, 409)
+        return ResetCoordinator(self.store, self.gateway, self.clock).reset(admin)
+
+    def reconcile_reset(self, reset_id, admin):
+        return ResetCoordinator(self.store, self.gateway, self.clock).reconcile(reset_id, admin)

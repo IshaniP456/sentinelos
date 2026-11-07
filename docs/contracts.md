@@ -35,6 +35,8 @@ expose `name` and safe per-call `metrics`. `classify_risk(plan)` sums every coun
 | `get_audit(plan_id=None)` | Recent durable workflow evidence, ordered newest first |
 | `flush_audit(plan_id=None)` | Retry durable evidence delivery to Mariam's idempotent sink |
 | `reconcile_execution(plan_id)` | Trusted recovery of the same executor identity; no public execute route |
+| `reset_demo(admin)` | Persist a CONTROL fence, then invoke the gateway reset with verified identity |
+| `reconcile_reset(reset_id, admin)` | Trusted recovery by current-state reads only; never resend reset |
 
 Public statuses remain PLANNING, VALIDATING, AUTHORIZING, SIMULATING, REPLANNING,
 AWAITING_APPROVAL, REAUTHORIZING, REVALIDATING, EXECUTING, COMPLETED, REJECTED,
@@ -52,17 +54,24 @@ must supply:
 | Method | Required contract |
 |---|---|
 | `get_warehouse()` / `get_agent()` | Current trusted records |
-| `get_run_id()` | Stable run identity; changes on reset |
+| `get_run_id()` | Nonempty string that changes on reset; workflow also normalizes `{run_id: str}` |
 | `authorize_plan(plan)` | Per-action decisions from current trusted agent/policy; fail closed |
 | `simulate_plan(plan, warehouse)` | Mariam's pure sequential simulator result |
 | `execute_plan(**kwargs)` | Exact keyword inputs below; atomic current checks and idempotent commit |
 | `revoke_agent(admin)` | Trusted revocation, atomic against execution |
-| `reset_demo(control_version, control)` | Atomically fence starts using CONTROL CAS and rotate run identity |
+| `reset_demo(control_version, control, admin)` | Invoke signed reset in the API process; CONTROL is a read-only fenced snapshot |
 | `append_audit(event)` | Idempotent by `(plan_id,event_id)`; no credentials or tokens |
 
 Executor keyword inputs are `plan_id`, `revision`, immutable `plan`,
 `warehouse_version`, `run_id`, and trusted `approval`. Elevated approval includes
-its revision, fingerprint, version, run, deciding identity, and time.
+exactly `approval_id`, `plan_id`, `revision`, `fingerprint`, `warehouse_version`,
+`run_id`, `decision`, `admin`, `decided_at`. Low-risk approval is null. Public and
+stored approvals retain `status` and `decision_at`; only the outbound executor
+envelope is normalized. Callback tokens and internal expiry fields are excluded.
+
+Reuse `backend.ai.validation.fingerprint` on the complete validated PlanActions
+object. It uses sorted JSON keys, compact separators, ensure_ascii=True, UTF-8
+and SHA-256. Action order is significant.
 
 An executor must atomically recheck authorization/current state, write all inventory
 changes, increment the warehouse version once, and record a unique execution
@@ -74,6 +83,40 @@ after versions. A typed business rejection must guarantee no commit. A network
 failure, empty/malformed acknowledgment, or generic dependency error is
 **unconfirmed**, not proof that inventory was unchanged. Explicit non-commit
 responses may use `{"executed":false,"no_commit":true}`.
+
+Agreed no-commit codes are VERSION_CONFLICT, RUN_MISMATCH, AUTHORIZATION_DENIED,
+SIMULATION_FAILED, APPROVAL_REQUIRED, APPROVAL_INVALID. The workflow preserves
+these codes and their boolean retry flags; operator messages are sanitized.
+AUTHORIZATION_DENIED is REJECTED; other guaranteed rejections are FAILED. A bare
+error, timeout or malformed acknowledgement remains unconfirmed and replays the
+same (plan_id, revision), as before.
+
+The production adapter module is `backend.security.gateway` (owned by Mariam).
+It wraps her Lambdas and imports `backend.core.simulator` in-process. Workflow
+IAM invokes only warehouse, agent, runid, authorize, execute, audit-append in
+account737876441172/us-east-1. It has no inventory-table, admin-Lambda, signing-key
+or secrets permissions. The API role separately signs revoke/reset assertions;
+loading or constructing the gateway in the workflow must not load that secret.
+
+## Reset fence protocol
+
+The orchestrator conditionally persists `CONTROL.reset` before the remote call.
+Every start checks the fence and participates in CONTROL CAS, so either the new
+start wins and reset is refused, or reset wins and the start cannot commit its
+old snapshot. An active plan, including uncertain execution, blocks reset.
+
+The gateway receives `(control_version, control, admin)`; it must not write
+CONTROL. The current response contract expects WarehouseState and a fresh run-ID
+read different from the prior run. This response shape awaits Mariam's final
+confirmation. Only then does the service update CONTROL.run_id and clear the
+fence. Gateway errors, missing run rotation, invalid responses or failed completion
+writes keep the fence durable. It has no automatic expiry or reset retry.
+
+Trusted recovery uses `reconcile_reset(reset_id, admin)`, reads current run and
+warehouse, and clears only the matching fence after run rotation is confirmed.
+It never invokes the reset Lambda again. If a reset was refused and the run has
+not changed, the fence stays blocked pending a separately agreed guaranteed
+reset-refusal/recovery contract; no unsafe timeout-based cancellation is supplied.
 
 ## Durable storage and audit
 
@@ -101,7 +144,12 @@ identity supplied by her handler. JWT group membership is matched exactly.
 An uncertain AWS start returns HTTP202 with the original `plan_id`, PLANNING,
 and `start_confirmed:false`; poll/reconcile that ID rather than resubmitting.
 The local worker is independent of polling. Refresh should recover the same ID.
-Use `VITE_MOCK=false`; Compose already supplies the live local base URL.
+Use `VITE_MOCK=false` and configure the frontend API base separately after the
+team merge; this backend contribution does not provide frontend orchestration.
+
+The actual fixture-backed completed GET sample is committed at
+`docs/examples/plan-status.fixture.completed.json`; see its adjacent README for
+capture provenance. No task/callback token is present.
 
 The optional existing preflight button sends an instruction prefix that the strict
 intent parser deliberately does not treat as authority. It currently returns a

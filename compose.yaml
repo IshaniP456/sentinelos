@@ -43,7 +43,7 @@ services:
   test:
     <<: *workflow
     profiles: [test]
-    command: python -m pytest backend/tests/test_ai.py backend/tests/test_store.py backend/tests/test_dynamodb_store.py backend/tests/test_contribution_setup.py -q
+    command: python -m pytest backend/tests/test_ai.py backend/tests/test_store.py backend/tests/test_dynamodb_store.py backend/tests/test_contribution_setup.py backend/tests/test_gateway_contracts.py -q
   test-integration:
     <<: *workflow
     profiles: [integration-test]

@@ -13,6 +13,32 @@ Standalone checks and full temporary-integration checks are separate evidence.
 The results below describe the historical combined checkout; they do not mean
 teammates' source belongs to this feature branch. Correction results follow below.
 
+## Mariam gateway contract alignment
+
+The backend now forwards verified admin identity to reset_demo(control_version,
+control, admin), fences new submissions before the remote reset, and reconciles
+uncertain resets by current-state reads without sending another reset. The
+executor receives Mariam's exact nine-field approval envelope; public approval
+shape remains unchanged. Guaranteed non-commit codes/retry flags are preserved.
+
+Verification after this change:
+
+- 60 standalone tests passed in Docker, zero skipped.
+- 204 tests passed in the separate pinned integration checkout, zero skipped;
+  teammates' source was not added to this branch.
+- Reset/start races, lost reset/control acknowledgments, durable reset recovery,
+  admin forwarding, approval token exclusion, and error-code handling passed.
+- Workflow IAM tests restrict data access to the orchestration table and invoke
+  access to Mariam's six non-admin functions; no signing-secret permission.
+- SAM lint, ARM64 build and packaged imports passed locally. No deployment or
+  privileged data-Lambda call occurred.
+- The actual fixture-backed GET response is committed in docs/examples, with
+  capture provenance. The ready-to-send message is docs/mariam-gateway-handoff.md.
+
+Pending: Mariam's final reset response/refusal contract and gateway, authenticated
+AWS deployment, actual StateMachineArn/table outputs, and live Nova Pro validation.
+The checks above are local contract evidence, not proof of those live services.
+
 ## Historical graph and checks
 
 The planner and persistence nodes run independently. Workflow assembly requires

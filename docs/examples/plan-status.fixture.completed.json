@@ -1,0 +1,234 @@
+{
+  "plan_id": "plan-6c6c4d33709a4c4c8578cdc784b13ea4",
+  "status": "COMPLETED",
+  "agent_id": "inventory-agent-01",
+  "instruction": "Move five packages out of Zone A, preferably into Zone B. Use another zone if necessary.",
+  "attempt": 2,
+  "warehouse_version": 2,
+  "candidates": [
+    {
+      "authorization": {
+        "allowed": true,
+        "decisions": [
+          {
+            "action_index": 0,
+            "allowed": true,
+            "reason_code": "POLICY_ALLOWED"
+          }
+        ]
+      },
+      "fingerprint": "7ebf1047f0a035ff6645b764b1fa91450fac79b3cdaa5bbdf178d538a245de6e",
+      "generation_ms": 0.05888938903808594,
+      "intent_validation": {
+        "errors": [],
+        "valid": true
+      },
+      "metrics": {
+        "latency_ms": 0.006,
+        "provider": "FIXTURE",
+        "usage": {}
+      },
+      "plan": {
+        "actions": [
+          {
+            "count": 5,
+            "from": "A",
+            "to": "B",
+            "type": "move_packages"
+          }
+        ]
+      },
+      "provenance": "FIXTURE",
+      "revision": 1,
+      "simulation": {
+        "passed": false,
+        "projected_state": {
+          "A": {
+            "capacity": 30,
+            "inventory": 12
+          },
+          "B": {
+            "capacity": 10,
+            "inventory": 13
+          },
+          "C": {
+            "capacity": 20,
+            "inventory": 8
+          }
+        },
+        "reason": "Action 1: Zone B would contain 13 packages, exceeding its maximum capacity of 10.",
+        "violations": [
+          {
+            "action_index": 0,
+            "capacity": 10,
+            "code": "CAPACITY_EXCEEDED",
+            "message": "Action 1: Zone B would contain 13 packages, exceeding its maximum capacity of 10.",
+            "projected": 13,
+            "zone": "B"
+          }
+        ],
+        "warehouse_version": 2
+      },
+      "validation": {
+        "errors": [],
+        "valid": true
+      }
+    },
+    {
+      "authorization": {
+        "allowed": true,
+        "decisions": [
+          {
+            "action_index": 0,
+            "allowed": true,
+            "reason_code": "POLICY_ALLOWED"
+          },
+          {
+            "action_index": 1,
+            "allowed": true,
+            "reason_code": "POLICY_ALLOWED"
+          }
+        ]
+      },
+      "fingerprint": "1a228e5dadb9036ce860a1a922670a3ff21583e2d1891b9c35e0f9a5bad531f8",
+      "generation_ms": 0.11134147644042969,
+      "intent_validation": {
+        "errors": [],
+        "valid": true
+      },
+      "metrics": {
+        "latency_ms": 0.017,
+        "provider": "FIXTURE",
+        "usage": {}
+      },
+      "plan": {
+        "actions": [
+          {
+            "count": 2,
+            "from": "A",
+            "to": "B",
+            "type": "move_packages"
+          },
+          {
+            "count": 3,
+            "from": "A",
+            "to": "C",
+            "type": "move_packages"
+          }
+        ]
+      },
+      "provenance": "FIXTURE",
+      "reauthorization": {
+        "allowed": true,
+        "decisions": [
+          {
+            "action_index": 0,
+            "allowed": true,
+            "reason_code": "POLICY_ALLOWED"
+          },
+          {
+            "action_index": 1,
+            "allowed": true,
+            "reason_code": "POLICY_ALLOWED"
+          }
+        ]
+      },
+      "revalidation": {
+        "passed": true,
+        "projected_state": {
+          "A": {
+            "capacity": 30,
+            "inventory": 12
+          },
+          "B": {
+            "capacity": 10,
+            "inventory": 10
+          },
+          "C": {
+            "capacity": 20,
+            "inventory": 11
+          }
+        },
+        "reason": null,
+        "violations": [],
+        "warehouse_version": 2
+      },
+      "revision": 2,
+      "simulation": {
+        "passed": true,
+        "projected_state": {
+          "A": {
+            "capacity": 30,
+            "inventory": 12
+          },
+          "B": {
+            "capacity": 10,
+            "inventory": 10
+          },
+          "C": {
+            "capacity": 20,
+            "inventory": 11
+          }
+        },
+        "reason": null,
+        "violations": [],
+        "warehouse_version": 2
+      },
+      "validation": {
+        "errors": [],
+        "valid": true
+      }
+    }
+  ],
+  "risk": {
+    "approval_required": true,
+    "risk": "ELEVATED",
+    "total_packages": 5
+  },
+  "execution": {
+    "executed": true,
+    "plan_id": "plan-6c6c4d33709a4c4c8578cdc784b13ea4",
+    "revision": 2,
+    "status": "COMPLETED",
+    "warehouse": {
+      "restricted_zones": [
+        "HAZMAT"
+      ],
+      "version": 3,
+      "warehouse_id": "demo-warehouse",
+      "zones": {
+        "A": {
+          "capacity": 30,
+          "inventory": 12
+        },
+        "B": {
+          "capacity": 10,
+          "inventory": 10
+        },
+        "C": {
+          "capacity": 20,
+          "inventory": 11
+        }
+      }
+    },
+    "warehouse_version_after": 3,
+    "warehouse_version_before": 2
+  },
+  "updated_at": "2026-11-07T21:23:55.519048Z",
+  "error": null,
+  "reconciliation_required": false,
+  "decision_latency_ms": 1249.6240139007568,
+  "evaluation_ms": 1749.5899200439453,
+  "approval": {
+    "approval_id": "approval-9b464de608d0454b8aa8f70085582c57",
+    "status": "APPROVED",
+    "revision": 2,
+    "expires_at": "2026-11-07T21:33:54.985738Z",
+    "decision_at": "2026-11-07T21:23:55.019056Z",
+    "admin": "admin-open"
+  },
+  "runtime": {
+    "provider": "FIXTURE",
+    "gateway": "LOCAL_FIXTURE"
+  }
+}

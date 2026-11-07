@@ -32,7 +32,11 @@ These checks do **not** constitute AWS service validation or deployment.
    underlying foundation-model ARNs its invocation requires.
 2. Finish Mariam's trusted authorization, data, simulator, audit sink, and atomic executor
    adapters. Package their agreed factory module with the workflow artifact and
-   set `SENTINEL_TRUSTED_ADAPTER_MODULE`. Missing adapters must fail closed.
+   set `SENTINEL_TRUSTED_ADAPTER_MODULE=backend.security.gateway`.
+   Missing adapters must fail closed. Mariam's gateway wraps her privileged
+   Lambdas; the workflow does not access her inventory/agent/audit tables or
+   signing key. The template now restricts invocation to her six agreed functions
+   in account737876441172/us-east-1. Revoke/reset are API-role operations only.
 3. Finish Ishani's authenticated API connection. Approvals, revocation and reset
    must receive a backend-established administrator identity. Never deploy open
    local authentication or fixture security/execution adapters.
