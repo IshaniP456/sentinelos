@@ -19,13 +19,32 @@ Two implementations:
 """
 
 import copy
+import hashlib
+import hmac
 import os
+import secrets
 import time
 
 try:  # package (local) vs flat (deployed Lambda)
     from .responses import ApiError
 except ImportError:
     from responses import ApiError
+
+
+# Signed admin assertion for Mariam's revoke/reset Lambdas (her spec). The
+# message format and HMAC must match her verifier exactly, so this is factored
+# out as a pure, deterministic function with a known-answer test. The key is
+# the raw SecretString bytes (not base64-decoded). Never log key or signature.
+def build_admin_assertion(key, action, admin, issued_at, nonce):
+    message = f"sentinel-admin-v1|{action}|{admin}|{issued_at}|{nonce}".encode()
+    signature = hmac.new(key, message, hashlib.sha256).hexdigest()
+    return {
+        "admin": admin,
+        "action": action,
+        "issued_at": issued_at,
+        "nonce": nonce,
+        "signature": signature,
+    }
 
 # ---------------------------------------------------------------------------
 # Frozen seed state (contract §2). Kept in sync with the frontend mock.
@@ -398,6 +417,37 @@ class AwsBackendOps(BackendOps):
         self._lambda = boto3.client("lambda")
         self._state_machine = os.environ.get("STATE_MACHINE_ARN")
         self._agent_id = os.environ.get("SENTINEL_AGENT_ID", "inventory-agent-01")
+        self._admin_secret_arn = os.environ.get("ADMIN_SECRET_ARN")
+        self._admin_key = None  # cached per container (raw SecretString bytes)
+
+    def _signing_key(self):
+        """Fetch + cache the admin-assertion signing key. Fail closed if the
+        secret is unconfigured or unreadable — never send an unsigned request."""
+        if self._admin_key is not None:
+            return self._admin_key
+        if not self._admin_secret_arn:
+            raise ApiError("INTERNAL_ERROR", "Admin signing not configured.", status=500)
+        try:
+            import boto3
+
+            value = boto3.client("secretsmanager").get_secret_value(
+                SecretId=self._admin_secret_arn
+            )["SecretString"]
+            self._admin_key = value.encode("utf-8")
+        except ApiError:
+            raise
+        except Exception:
+            raise ApiError("INTERNAL_ERROR", "Admin signing not configured.", status=500)
+        return self._admin_key
+
+    def _admin_assertion(self, action, admin):
+        """Build a fresh single-use signed assertion for an admin action."""
+        if not admin or len(admin) > 256 or "|" in admin:
+            raise ApiError("FORBIDDEN", "Invalid administrator identity.")
+        key = self._signing_key()
+        return build_admin_assertion(
+            key, action, admin, int(time.time()), secrets.token_hex(16)
+        )
 
     def _invoke(self, env_var, payload):
         """Invoke a teammate's trusted Lambda by name (from an env var) and
@@ -458,10 +508,13 @@ class AwsBackendOps(BackendOps):
         return self._invoke("APPROVAL_FN", {"approval_id": approval_id, "decision": decision, "admin": admin})
 
     def revoke_agent(self, admin):
-        return self._invoke("REVOKE_FN", {"admin": admin})  # Mariam: revoke_agent
+        # Mariam's Lambda rejects a bare string; send a fresh signed assertion.
+        assertion = self._admin_assertion("REVOKE_AGENT", admin)
+        return self._invoke("REVOKE_FN", {"admin_assertion": assertion})
 
     def reset_demo(self, admin):
-        return self._invoke("RESET_FN", {"admin": admin})  # Mariam: reset (FR13)
+        assertion = self._admin_assertion("RESET_DEMO", admin)
+        return self._invoke("RESET_FN", {"admin_assertion": assertion})  # FR13
 
 
 _SINGLETON = None

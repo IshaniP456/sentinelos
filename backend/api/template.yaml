@@ -64,6 +64,13 @@ Parameters:
     Type: String
     Default: ''
     Description: Mariam's reset_demo Lambda name/ARN.
+  AdminSecretArn:
+    Type: String
+    Default: ''
+    Description: >
+      Secrets Manager ARN of the admin-assertion signing key (Mariam's
+      sentinel/admin-assertion-key). Used to sign revoke/reset assertions. The
+      API role already has read access via the secret's resource policy.
 
 Globals:
   Function:
@@ -103,6 +110,7 @@ Resources:
           APPROVAL_FN: !Ref ApprovalFn
           REVOKE_FN: !Ref RevokeFn
           RESET_FN: !Ref ResetFn
+          ADMIN_SECRET_ARN: !Ref AdminSecretArn
       Policies:
         # Broad for the hackathon; tighten Resource to the specific state
         # machine + teammate function ARNs once they are known.
