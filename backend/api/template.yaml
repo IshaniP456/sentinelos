@@ -112,15 +112,22 @@ Resources:
           RESET_FN: !Ref ResetFn
           ADMIN_SECRET_ARN: !Ref AdminSecretArn
       Policies:
-        # Broad for the hackathon; tighten Resource to the specific state
-        # machine + teammate function ARNs once they are known.
         - Statement:
+            # No state machine deployed yet; scope to Tishneet's ARN once known.
             - Effect: Allow
               Action: states:StartExecution
               Resource: '*'
+            # Scoped to EXACTLY Mariam's five sentinel-data Lambdas (per her
+            # request) — not '*' and not a sentinel-data-* prefix, so this role
+            # cannot invoke her forthcoming executor.
             - Effect: Allow
               Action: lambda:InvokeFunction
-              Resource: '*'
+              Resource:
+                - arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-warehouse
+                - arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-agent
+                - arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-audit
+                - arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-revoke
+                - arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-reset
       Events:
         Root:
           Type: Api
