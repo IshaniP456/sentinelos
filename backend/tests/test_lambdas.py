@@ -22,6 +22,9 @@ HANDLERS = [
     lambdas.audit_handler,
     lambdas.revoke_handler,
     lambdas.reset_handler,
+    lambdas.runid_handler,
+    lambdas.execute_handler,
+    lambdas.audit_append_handler,
 ]
 
 
@@ -314,3 +317,63 @@ def test_every_template_handler_exists():
     assert sorted(handlers) == sorted(h.__name__ for h in HANDLERS)
     for name in handlers:
         assert callable(getattr(lambdas, name))
+
+
+# ------------------------------------------------------------- runid / execute
+
+
+def test_runid_handler_returns_current_run(stack):
+    assert lambdas.runid_handler({}, None) == {"run_id": dynamo.get_run_id()}
+
+
+def _execute_event(**overrides):
+    event = {
+        "plan_id": "plan-1",
+        "revision": 1,
+        "plan": {"actions": [{"type": "move_packages", "from": "A", "to": "C", "count": 3}]},
+        "warehouse_version": 1,
+        "run_id": dynamo.get_run_id(),
+        "approval": None,
+    }
+    event.update(overrides)
+    return event
+
+
+def test_execute_handler_commits_and_replays(stack):
+    first = lambdas.execute_handler(_execute_event(), None)
+    again = lambdas.execute_handler(_execute_event(), None)
+
+    assert first["executed"] is True and first["warehouse_version_after"] == 2
+    assert again == first
+    assert dynamo.get_warehouse()["zones"]["C"]["inventory"] == 8
+
+
+def test_execute_handler_no_commit_shape(stack):
+    result = lambdas.execute_handler(_execute_event(warehouse_version=7), None)
+
+    assert result["executed"] is False and result["no_commit"] is True
+    assert result["error"]["code"] == "VERSION_CONFLICT"
+    assert dynamo.get_warehouse()["version"] == 1
+
+
+@pytest.mark.parametrize("event", [{}, {"plan_id": "p"}, None, "text"])
+def test_execute_handler_rejects_malformed_requests_without_commit(stack, event):
+    result = lambdas.execute_handler(event, None)
+
+    assert result["no_commit"] is True and result["error"]["code"] == "INVALID_REQUEST"
+    assert dynamo.get_warehouse()["version"] == 1
+
+
+def test_execute_handler_rejects_unexpected_fields(stack):
+    result = lambdas.execute_handler(_execute_event(skip_checks=True), None)
+
+    assert result["no_commit"] is True and result["error"]["code"] == "INVALID_REQUEST"
+
+
+def test_execute_handler_infra_failure_is_unconfirmed_not_no_commit(stack):
+    stack["dynamodb"].delete_table(TableName=table_names()["executions"])
+
+    result = lambdas.execute_handler(_execute_event(), None)
+
+    assert_error(result, "INTERNAL_ERROR", retryable=True)
+    assert "no_commit" not in result

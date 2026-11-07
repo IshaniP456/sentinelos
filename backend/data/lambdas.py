@@ -133,6 +133,79 @@ def reset_handler(event: Any, context: Any = None) -> dict[str, Any]:
     return _run("reset", work)
 
 
+def runid_handler(event: Any, context: Any = None) -> dict[str, Any]:
+    """Return ``{"run_id": str}``, the current demo-run identity (rotates on reset)."""
+    return _run("runid", lambda: {"run_id": dynamo.get_run_id(_warehouse_id())})
+
+
+def audit_append_handler(event: Any, context: Any = None) -> dict[str, Any]:
+    """Append one AuditEvent idempotently. Input ``{"event": {...}}``.
+
+    Returns ``{"recorded": true, "duplicate": bool}``. A repeat of the same
+    (plan_id, event_id) is acknowledged as a duplicate, never an error, so the
+    workflow's outbox can safely redeliver after a lost acknowledgment.
+    """
+
+    def work() -> dict[str, Any]:
+        audit_event = _payload(event).get("event")
+        if not isinstance(audit_event, Mapping):
+            raise InvalidRecord("event must be an object.")
+        try:
+            dynamo.record_audit_event(audit_event)
+        except AuditEventExists:
+            return {"recorded": True, "duplicate": True}
+        return {"recorded": True, "duplicate": False}
+
+    return _run("audit_append", work)
+
+
+EXECUTE_FIELDS = ("plan_id", "revision", "plan", "warehouse_version", "run_id", "approval")
+
+
+def execute_handler(event: Any, context: Any = None) -> dict[str, Any]:
+    """Execute one plan revision. Invoked only by the workflow.
+
+    Returns the executor's result unchanged: an ExecutionResult
+    (``executed: true``) or a guaranteed no-commit object
+    (``executed: false, no_commit: true``). Any other failure returns a bare
+    ``{"error": ...}`` WITHOUT ``no_commit``: the caller must treat it as
+    unconfirmed and replay the same (plan_id, revision).
+    """
+    from data.executor import execute_plan  # imported lazily so read Lambdas stay small
+
+    payload = _payload(event)
+    unknown = sorted(set(payload) - set(EXECUTE_FIELDS), key=str)
+    missing = [f for f in EXECUTE_FIELDS if f not in payload and f != "approval"]
+    if unknown or missing:
+        return {
+            "executed": False,
+            "no_commit": True,
+            "status": "FAILED",
+            "error": {"code": "INVALID_REQUEST",
+                      "message": f"Bad execute request (missing {missing}, unexpected {unknown}).",
+                      "retryable": False},
+        }
+    try:
+        return execute_plan(
+            plan_id=payload["plan_id"],
+            revision=payload["revision"],
+            plan=payload["plan"],
+            warehouse_version=payload["warehouse_version"],
+            run_id=payload["run_id"],
+            approval=payload.get("approval"),
+            agent_id=_agent_id(),
+            warehouse_id=_warehouse_id(),
+        )
+    except DataError as exc:
+        logger.exception("execute: data error (%s); outcome UNCONFIRMED", getattr(exc, "aws_code", exc.code))
+        return _error("INTERNAL_ERROR", "Execution outcome is unconfirmed; replay the same revision.",
+                      retryable=True)
+    except Exception:
+        logger.exception("execute: unexpected error; outcome UNCONFIRMED")
+        return _error("INTERNAL_ERROR", "Execution outcome is unconfirmed; replay the same revision.",
+                      retryable=True)
+
+
 # ---------------------------------------------------------------------- security
 
 

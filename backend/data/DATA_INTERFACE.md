@@ -105,3 +105,49 @@ uv run --no-project --python 3.12 --with boto3 python -m data.setup_tables --app
 # Real DynamoDB tests (non-destructive):
 SENTINEL_AWS_TESTS=1 uv run --no-project --python 3.12 --with pytest --with boto3 python -m pytest tests/test_data_aws.py -v
 ```
+
+## Executor (Phase 3) — `data.executor.execute_plan`
+
+Lambda: `sentinel-data-execute` (invoke from the workflow only). Run identity: `sentinel-data-runid` → `{"run_id": str}`.
+
+```python
+execute_plan(*, plan_id, revision, plan, warehouse_version, run_id, approval=None)
+```
+
+Exact keyword inputs of the workflow gateway. `approval` is `None` for totals of 1–4. For totals ≥ 5 it must be
+`{"status": "APPROVED", "revision", "fingerprint", "warehouse_version", "run_id", "admin", ...}` where
+`fingerprint = sha256(json.dumps(plan, sort_keys=True, separators=(",", ":"), ensure_ascii=True))`
+(same as `backend/ai/validation.py::fingerprint`; see `core/fingerprint.py`).
+
+Order of checks, all against current trusted state: replay marker → run_id → warehouse version → plan structure →
+authorization with the current agent (local policy, labeled `LOCAL_POLICY` until Verified Permissions) →
+approval binding (elevated only) → simulation. Then one transaction: zones + version+1 (conditional on version
+and run_id), agent still `ACTIVE`, unique `(plan_id, revision)` marker in `sentinel_executions`, `PLAN_EXECUTED` audit.
+
+| Result | Meaning |
+|---|---|
+| ExecutionResult (`executed: true`, contract §3.5) | Committed. Replays of the same `(plan_id, revision)` return this exact object. |
+| `{"executed": false, "no_commit": true, "status", "error": {code, message, retryable}}` | Guaranteed nothing written. Codes: `INVALID_REQUEST`, `RUN_MISMATCH`, `VERSION_CONFLICT` (retryable), `PLAN_VALIDATION_FAILED`, `AUTHORIZATION_DENIED`, `APPROVAL_REQUIRED`, `APPROVAL_INVALID`, `SIMULATION_FAILED`. Denials may include `authorization` or `violations`. |
+| Bare `{"error": {...}}` (no `no_commit`) | **Unconfirmed.** Replay the same `(plan_id, revision)` to learn the outcome. |
+
+## Workflow gateway — `backend.security.gateway`
+
+`SENTINEL_TRUSTED_ADAPTER_MODULE=backend.security.gateway`; the workflow calls `create_gateway(store)`.
+Building it makes no AWS calls and never loads the signing key.
+
+| Method | Implementation |
+|---|---|
+| `get_warehouse()`, `get_agent()` | invoke `sentinel-data-warehouse` / `sentinel-data-agent` |
+| `get_run_id()` | invoke `sentinel-data-runid`, returns a non-empty string |
+| `authorize_plan(plan)` | current agent via Lambda + `security.authorization` (`engine: LOCAL_POLICY` until Verified Permissions); any read failure denies every action |
+| `simulate_plan(plan, warehouse)` | in-process `backend.core.simulator` |
+| `execute_plan(**six fields)` | invoke `sentinel-data-execute`; response returned unchanged; transport failure raises |
+| `append_audit(event)` | invoke `sentinel-data-audit-append` → `{"recorded": true, "duplicate": bool}` |
+| `revoke_agent(admin)` | signs `REVOKE_AGENT` at call time (API process only), invokes `sentinel-data-revoke` |
+| `reset_demo(control_version, control, admin)` | signs `RESET_DEMO`, invokes `sentinel-data-reset`, returns WarehouseState; never writes CONTROL; call `get_run_id()` after |
+
+Errors from read/admin calls raise `security.gateway.GatewayError(code, message, retryable)`.
+Function names can be overridden with `SENTINEL_FN_<WAREHOUSE|AGENT|RUNID|EXECUTE|AUDIT_APPEND|REVOKE|RESET>`.
+
+Invoke permissions: the workflow role needs warehouse, agent, runid, execute, audit-append.
+Ishani's API role (where revoke/reset/approval run) needs warehouse, agent, audit, runid, revoke, reset, and the secret.

@@ -19,10 +19,16 @@ SYSTEM_PLAN_ID = "SYSTEM"  # plan_id for events not tied to a plan (revoke, rese
 
 AGENT_STATUSES = frozenset({"ACTIVE", "REVOKED", "SUSPENDED"})
 
-# Global secondary index for "recent events across plans" (contract 5.2).
-AUDIT_FEED_INDEX = "recent_events"
+# Global secondary indexes for "recent events across plans" (contract 5.2).
+# recent_events_by_time sorts by "<timestamp>#<event_id>" so events from every
+# writer (workflow, executor, admin actions) interleave in time order.
+# recent_events (sorted by event_id) is kept only because DynamoDB cannot swap
+# an index in place on the live table; nothing reads it.
+LEGACY_AUDIT_FEED_INDEX = "recent_events"
+AUDIT_FEED_INDEX = "recent_events_by_time"
 AUDIT_FEED_KEY = "feed"
 AUDIT_FEED_VALUE = "ALL"
+AUDIT_FEED_SORT_KEY = "feed_at"
 
 _SEED_WAREHOUSE: dict[str, Any] = {
     "warehouse_id": DEFAULT_WAREHOUSE_ID,
@@ -59,6 +65,7 @@ def table_names() -> dict[str, str]:
         "warehouse": os.environ.get("SENTINEL_WAREHOUSE_TABLE", "sentinel_warehouse"),
         "agents": os.environ.get("SENTINEL_AGENTS_TABLE", "sentinel_agents"),
         "audit": os.environ.get("SENTINEL_AUDIT_TABLE", "sentinel_audit"),
+        "executions": os.environ.get("SENTINEL_EXECUTIONS_TABLE", "sentinel_executions"),
     }
 
 
@@ -88,17 +95,33 @@ def table_definitions() -> list[dict[str, Any]]:
                 {"AttributeName": "plan_id", "AttributeType": "S"},
                 {"AttributeName": "event_id", "AttributeType": "S"},
                 {"AttributeName": AUDIT_FEED_KEY, "AttributeType": "S"},
+                {"AttributeName": AUDIT_FEED_SORT_KEY, "AttributeType": "S"},
             ],
             "GlobalSecondaryIndexes": [
                 {
-                    "IndexName": AUDIT_FEED_INDEX,
+                    "IndexName": LEGACY_AUDIT_FEED_INDEX,
                     "KeySchema": [
                         {"AttributeName": AUDIT_FEED_KEY, "KeyType": "HASH"},
                         {"AttributeName": "event_id", "KeyType": "RANGE"},
                     ],
                     "Projection": {"ProjectionType": "ALL"},
-                }
+                },
+                {
+                    "IndexName": AUDIT_FEED_INDEX,
+                    "KeySchema": [
+                        {"AttributeName": AUDIT_FEED_KEY, "KeyType": "HASH"},
+                        {"AttributeName": AUDIT_FEED_SORT_KEY, "KeyType": "RANGE"},
+                    ],
+                    "Projection": {"ProjectionType": "ALL"},
+                },
             ],
+            "BillingMode": "PAY_PER_REQUEST",
+        },
+        {
+            # One item per committed (plan_id, revision): the executor's replay guard.
+            "TableName": names["executions"],
+            "KeySchema": [{"AttributeName": "execution_id", "KeyType": "HASH"}],
+            "AttributeDefinitions": [{"AttributeName": "execution_id", "AttributeType": "S"}],
             "BillingMode": "PAY_PER_REQUEST",
         },
     ]

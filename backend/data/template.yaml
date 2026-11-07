@@ -41,6 +41,7 @@ Globals:
         SENTINEL_WAREHOUSE_TABLE: !Ref WarehouseTable
         SENTINEL_AGENTS_TABLE: !Ref AgentsTable
         SENTINEL_AUDIT_TABLE: !Ref AuditTable
+        SENTINEL_EXECUTIONS_TABLE: !Ref ExecutionsTable
         SENTINEL_AGENT_ID: !Ref AgentId
         SENTINEL_WAREHOUSE_ID: !Ref WarehouseId
 
@@ -83,15 +84,37 @@ Resources:
         - {AttributeName: plan_id, AttributeType: S}
         - {AttributeName: event_id, AttributeType: S}
         - {AttributeName: feed, AttributeType: S}
+        - {AttributeName: feed_at, AttributeType: S}
       KeySchema:
         - {AttributeName: plan_id, KeyType: HASH}
         - {AttributeName: event_id, KeyType: RANGE}
       GlobalSecondaryIndexes:
+        # Legacy index (sorted by event_id). Kept because DynamoDB allows only one
+        # index creation per update; nothing reads it.
         - IndexName: recent_events
           KeySchema:
             - {AttributeName: feed, KeyType: HASH}
             - {AttributeName: event_id, KeyType: RANGE}
           Projection: {ProjectionType: ALL}
+        # Time-ordered feed across all writers: feed_at = "<timestamp>#<event_id>".
+        - IndexName: recent_events_by_time
+          KeySchema:
+            - {AttributeName: feed, KeyType: HASH}
+            - {AttributeName: feed_at, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+
+  ExecutionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: sentinel_executions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: execution_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: execution_id, KeyType: HASH}
       PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
 
   # ------------------------------------------------- admin assertion secret
@@ -151,7 +174,7 @@ Resources:
               Action: dynamodb:Query
               Resource:
                 - !GetAtt AuditTable.Arn
-                - !Sub '${AuditTable.Arn}/index/recent_events'
+                - !Sub '${AuditTable.Arn}/index/recent_events_by_time'
 
   RevokeFunction:
     Type: AWS::Serverless::Function
@@ -200,6 +223,54 @@ Resources:
                 Resource: !Ref StateMachineArn
               - !Ref AWS::NoValue
 
+  RunIdFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sentinel-data-runid
+      Handler: data.lambdas.runid_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt WarehouseTable.Arn
+
+  AuditAppendFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sentinel-data-audit-append
+      Handler: data.lambdas.audit_append_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt AuditTable.Arn
+
+  ExecuteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sentinel-data-execute
+      Handler: data.lambdas.execute_handler
+      Timeout: 15
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource:
+                - !GetAtt WarehouseTable.Arn
+                - !GetAtt AgentsTable.Arn
+                - !GetAtt ExecutionsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt WarehouseTable.Arn
+            - Effect: Allow
+              Action: dynamodb:ConditionCheckItem
+              Resource: !GetAtt AgentsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource:
+                - !GetAtt ExecutionsTable.Arn
+                - !GetAtt AuditTable.Arn
+
 Outputs:
   WarehouseFnArn:
     Description: Ishani's WarehouseFn parameter
@@ -216,6 +287,17 @@ Outputs:
   ResetFnArn:
     Description: Ishani's ResetFn parameter
     Value: !GetAtt ResetFunction.Arn
+  RunIdFnArn:
+    Description: Workflow gateway get_run_id
+    Value: !GetAtt RunIdFunction.Arn
+  ExecuteFnArn:
+    Description: Workflow gateway execute_plan (workflow role only)
+    Value: !GetAtt ExecuteFunction.Arn
+  AuditAppendFnArn:
+    Description: Workflow gateway append_audit (idempotent)
+    Value: !GetAtt AuditAppendFunction.Arn
+  ExecutionsTableName:
+    Value: !Ref ExecutionsTable
   WarehouseTableName:
     Value: !Ref WarehouseTable
   AgentsTableName:

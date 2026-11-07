@@ -29,6 +29,7 @@ from data.schema import (
     AGENT_STATUSES,
     AUDIT_FEED_INDEX,
     AUDIT_FEED_KEY,
+    AUDIT_FEED_SORT_KEY,
     AUDIT_FEED_VALUE,
     DEFAULT_WAREHOUSE_ID,
     SYSTEM_PLAN_ID,
@@ -171,8 +172,13 @@ def _from_dynamo(value: Any) -> Any:
 
 def _to_dynamo(value: Any) -> Any:
     """Make a JSON-compatible value storable (floats become ``Decimal``)."""
+    def already_decimal(obj: Any) -> Any:
+        if isinstance(obj, Decimal):  # safe to apply twice
+            return int(obj) if obj == obj.to_integral_value() else float(obj)
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
     try:
-        return json.loads(json.dumps(value), parse_float=Decimal)
+        return json.loads(json.dumps(value, default=already_decimal), parse_float=Decimal)
     except (TypeError, ValueError) as exc:
         raise InvalidRecord(f"Value is not JSON-serializable: {exc}") from exc
 
@@ -209,6 +215,16 @@ def get_warehouse(warehouse_id: str = DEFAULT_WAREHOUSE_ID) -> dict[str, Any]:
         CorruptRecord: the stored item lacks version or zones.
         DataAccessError: DynamoDB call failed.
     """
+    state, _run_id = get_warehouse_record(warehouse_id)
+    return state
+
+
+def get_warehouse_record(warehouse_id: str = DEFAULT_WAREHOUSE_ID) -> tuple[dict[str, Any], str | None]:
+    """Return ``(WarehouseState, run_id)`` from one strongly consistent read.
+
+    ``run_id`` is internal (not part of WarehouseState). It changes on every
+    reset so the executor can reject plans and approvals from an earlier run.
+    """
     _require_text("warehouse_id", warehouse_id)
     with _aws("get_warehouse"):
         response = _table("warehouse").get_item(
@@ -220,12 +236,21 @@ def get_warehouse(warehouse_id: str = DEFAULT_WAREHOUSE_ID) -> dict[str, Any]:
     item = _from_dynamo(item)
     if "version" not in item or "zones" not in item:
         raise CorruptRecord(f"Warehouse {warehouse_id} is missing version or zones.")
-    return {
+    state = {
         "warehouse_id": item["warehouse_id"],
         "version": item["version"],
         "zones": item["zones"],
         "restricted_zones": item.get("restricted_zones", []),
     }
+    return state, item.get("run_id")
+
+
+def get_run_id(warehouse_id: str = DEFAULT_WAREHOUSE_ID) -> str:
+    """Return the current demo-run identity. Raises CorruptRecord if it is missing."""
+    _state, run_id = get_warehouse_record(warehouse_id)
+    if not isinstance(run_id, str) or not run_id:
+        raise CorruptRecord(f"Warehouse {warehouse_id} has no run_id.")
+    return run_id
 
 
 # ----------------------------------------------------------------------- agents
@@ -315,7 +340,7 @@ def record_audit_event(event: Mapping[str, Any]) -> dict[str, Any]:
         The event exactly as stored.
     """
     stored = _build_audit_event(event)
-    item = _to_dynamo({**stored, AUDIT_FEED_KEY: AUDIT_FEED_VALUE})
+    item = audit_item(stored)
     with _aws("record_audit_event"):
         try:
             _table("audit").put_item(
@@ -355,6 +380,15 @@ def list_audit_events(plan_id: str | None = None, *, limit: int = 50) -> list[di
                 ConsistentRead=True,
             )
     return [_audit_record(_from_dynamo(item)) for item in response.get("Items", [])]
+
+
+def audit_item(stored: Mapping[str, Any]) -> dict[str, Any]:
+    """DynamoDB item for a validated audit event, with the time-ordered feed keys."""
+    return _to_dynamo({
+        **stored,
+        AUDIT_FEED_KEY: AUDIT_FEED_VALUE,
+        AUDIT_FEED_SORT_KEY: f"{stored['timestamp']}#{stored['event_id']}",
+    })
 
 
 def _build_audit_event(event: Mapping[str, Any]) -> dict[str, Any]:
@@ -511,7 +545,7 @@ def reset_demo(
                 put(names["agents"], agent),
                 put(
                     names["audit"],
-                    {**audit, AUDIT_FEED_KEY: AUDIT_FEED_VALUE},
+                    audit_item(audit),
                     "attribute_not_exists(plan_id) AND attribute_not_exists(event_id)",
                 ),
             ]
