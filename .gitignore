@@ -1,0 +1,13 @@
+# Author: Tishneet
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.env
+.env.local
+.aws-sam/
+node_modules/
+dist/
+tmp/
+output/

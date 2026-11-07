@@ -1,0 +1,109 @@
+# Author: Tishneet
+# Standalone workflow stack; API/auth/warehouse stacks remain teammate-owned.
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: SentinelOS AI/workflow resources; real trusted adapters required.
+
+Parameters:
+  BedrockModelId:
+    Type: String
+    MinLength: 1
+    Description: Accessible model or inference-profile ID in this Region.
+  BedrockModelArn:
+    Type: String
+    AllowedPattern: '^arn:[^:]+:bedrock:.+$'
+    Description: Resource ARN used by the configured model/profile.
+  BedrockUnderlyingModelArns:
+    Type: CommaDelimitedList
+    AllowedPattern: '^arn:[^:]+:bedrock:[^:]+::foundation-model/.+$'
+    Description: Exact foundation-model ARNs required by this model/profile (no wildcard).
+  TrustedAdapterModule:
+    Type: String
+    AllowedPattern: '^[A-Za-z_][A-Za-z0-9_.]*$'
+    Description: Packaged trusted adapter factory module agreed with Mariam.
+  TrustedFunctionArns:
+    Type: CommaDelimitedList
+    AllowedPattern: '^arn:[^:]+:lambda:[^:]+:[0-9]{12}:function:[^*]+$'
+    Description: Exact authorizer/executor/read Lambda ARNs used by that adapter.
+
+Resources:
+  WorkflowTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: record_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: record_id
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  WorkflowFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: ../..
+      Handler: backend.workflows.aws.handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      Timeout: 75
+      MemorySize: 512
+      Events:
+        RetryAuditDelivery:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Input: '{"operation":"flush_audit"}'
+      Environment:
+        Variables:
+          SENTINEL_RUNTIME: aws
+          SENTINEL_MODEL_PROVIDER: bedrock
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          SENTINEL_WORKFLOW_TABLE: !Ref WorkflowTable
+          SENTINEL_TRUSTED_ADAPTER_MODULE: !Ref TrustedAdapterModule
+          SENTINEL_APPROVAL_TIMEOUT: '600'
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              # Transactional Put operations use the underlying PutItem IAM action.
+              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:Scan]
+              Resource: !GetAtt WorkflowTable.Arn
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: !Ref BedrockModelArn
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: !Ref BedrockUnderlyingModelArns
+            - Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !Ref TrustedFunctionArns
+            - Effect: Allow
+              Action: states:SendTaskSuccess
+              Resource: '*'
+              # Callback task tokens do not support resource-level IAM scoping.
+
+  WorkflowStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: STANDARD
+      DefinitionUri: statemachine.asl.json
+      DefinitionSubstitutions:
+        WorkflowFunctionArn: !GetAtt WorkflowFunction.Arn
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref WorkflowFunction
+
+Outputs:
+  WorkflowFunctionArn:
+    Value: !GetAtt WorkflowFunction.Arn
+  StateMachineArn:
+    Value: !Ref WorkflowStateMachine
+    Description: Configure on the trusted API wrapper; not on the workflow Lambda.
+  WorkflowTableName:
+    Value: !Ref WorkflowTable

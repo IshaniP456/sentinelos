@@ -1,0 +1,9 @@
+# Author: Tishneet
+.git
+.venv
+**/__pycache__
+**/node_modules
+**/dist
+*.pdf
+graph-engineering-codex
+.env*

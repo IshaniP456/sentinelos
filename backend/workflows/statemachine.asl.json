@@ -1,0 +1,63 @@
+{
+  "Comment": "SentinelOS Standard workflow. Author: Tishneet. Business state is persisted independently of transport.",
+  "StartAt": "Inspect",
+  "TimeoutSeconds": 1800,
+  "States": {
+    "Inspect": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "status", "plan_id.$": "$.plan_id"}},
+      "ResultSelector": {"status.$": "$.Payload.status"},
+      "ResultPath": "$.workflow",
+      "TimeoutSeconds": 90,
+      "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}],
+      "Next": "Route"
+    },
+    "Route": {
+      "Type": "Choice",
+      "Choices": [
+        {"Variable": "$.workflow.status", "StringEquals": "PLANNING", "Next": "GeneratePlan"},
+        {"Variable": "$.workflow.status", "StringEquals": "VALIDATING", "Next": "ValidatePlan"},
+        {"Variable": "$.workflow.status", "StringEquals": "AUTHORIZING", "Next": "AuthorizePlan"},
+        {"Variable": "$.workflow.status", "StringEquals": "SIMULATING", "Next": "SimulatePlan"},
+        {"Variable": "$.workflow.status", "StringEquals": "REPLANNING", "Next": "Replan"},
+        {"Variable": "$.workflow.status", "StringEquals": "AWAITING_APPROVAL", "Next": "WaitForApproval"},
+        {"Variable": "$.workflow.status", "StringEquals": "REAUTHORIZING", "Next": "ReauthorizePlan"},
+        {"Variable": "$.workflow.status", "StringEquals": "REVALIDATING", "Next": "RevalidatePlan"},
+        {"Variable": "$.workflow.status", "StringEquals": "EXECUTING", "Next": "ExecutePlan"},
+        {"Variable": "$.workflow.status", "StringEquals": "COMPLETED", "Next": "Completed"},
+        {"Variable": "$.workflow.status", "StringEquals": "REJECTED", "Next": "Rejected"},
+        {"Variable": "$.workflow.status", "StringEquals": "FAILED", "Next": "Failed"},
+        {"Variable": "$.workflow.status", "StringEquals": "EXPIRED", "Next": "Expired"}
+      ],
+      "Default": "RecordFailure"
+    },
+    "GeneratePlan": {"Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "advance", "plan_id.$": "$.plan_id"}}, "ResultSelector": {"status.$": "$.Payload.status"}, "ResultPath": "$.workflow", "TimeoutSeconds": 90, "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}], "Next": "Route"},
+    "ValidatePlan": {"Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "advance", "plan_id.$": "$.plan_id"}}, "ResultSelector": {"status.$": "$.Payload.status"}, "ResultPath": "$.workflow", "TimeoutSeconds": 90, "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}], "Next": "Route"},
+    "AuthorizePlan": {"Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "advance", "plan_id.$": "$.plan_id"}}, "ResultSelector": {"status.$": "$.Payload.status"}, "ResultPath": "$.workflow", "TimeoutSeconds": 90, "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}], "Next": "Route"},
+    "SimulatePlan": {"Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "advance", "plan_id.$": "$.plan_id"}}, "ResultSelector": {"status.$": "$.Payload.status"}, "ResultPath": "$.workflow", "TimeoutSeconds": 90, "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}], "Next": "Route"},
+    "Replan": {"Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "advance", "plan_id.$": "$.plan_id"}}, "ResultSelector": {"status.$": "$.Payload.status"}, "ResultPath": "$.workflow", "TimeoutSeconds": 90, "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}], "Next": "Route"},
+    "WaitForApproval": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+      "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "register_approval", "plan_id.$": "$.plan_id", "task_token.$": "$$.Task.Token"}},
+      "ResultPath": "$.callback_result",
+      "TimeoutSeconds": 600,
+      "Catch": [
+        {"ErrorEquals": ["States.Timeout"], "ResultPath": "$.transport_error", "Next": "ExpireApproval"},
+        {"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}
+      ],
+      "Next": "Inspect"
+    },
+    "ExpireApproval": {"Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "expire", "plan_id.$": "$.plan_id"}}, "ResultSelector": {"status.$": "$.Payload.status"}, "ResultPath": "$.workflow", "TimeoutSeconds": 90, "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "Failed"}], "Next": "Route"},
+    "ReauthorizePlan": {"Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "advance", "plan_id.$": "$.plan_id"}}, "ResultSelector": {"status.$": "$.Payload.status"}, "ResultPath": "$.workflow", "TimeoutSeconds": 90, "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}], "Next": "Route"},
+    "RevalidatePlan": {"Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "advance", "plan_id.$": "$.plan_id"}}, "ResultSelector": {"status.$": "$.Payload.status"}, "ResultPath": "$.workflow", "TimeoutSeconds": 90, "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}], "Next": "Route"},
+    "ExecutePlan": {"Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "advance", "plan_id.$": "$.plan_id"}}, "ResultSelector": {"status.$": "$.Payload.status"}, "ResultPath": "$.workflow", "TimeoutSeconds": 90, "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}], "Next": "Route"},
+    "RecordFailure": {"Type": "Task", "Resource": "arn:aws:states:::lambda:invoke", "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "fail", "plan_id.$": "$.plan_id"}}, "ResultSelector": {"status.$": "$.Payload.status"}, "ResultPath": "$.workflow", "TimeoutSeconds": 90, "Catch": [{"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "Failed"}], "Next": "RouteAfterFailure"},
+    "RouteAfterFailure": {"Type": "Choice", "Choices": [{"Variable": "$.workflow.status", "StringEquals": "COMPLETED", "Next": "Completed"}], "Default": "Failed"},
+    "Completed": {"Type": "Succeed"},
+    "Rejected": {"Type": "Fail", "Error": "PlanRejected", "Cause": "Policy or administrator denied the plan; inspect durable audit history."},
+    "Expired": {"Type": "Fail", "Error": "ApprovalExpired", "Cause": "The approval deadline elapsed; inventory was not changed by approval."},
+    "Failed": {"Type": "Fail", "Error": "PlanFailed", "Cause": "The workflow could not complete; inspect durable state and execution outcome."}
+  }
+}

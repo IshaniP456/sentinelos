@@ -1,0 +1,2 @@
+# Author: Tishneet. SAM CodeUri is the repository root.
+-r backend/requirements.txt

@@ -1,0 +1,76 @@
+# Author: Tishneet. Apply only after the team branches are merged.
+diff --git a/backend/api/auth.py b/backend/api/auth.py
+index 4f36518..2312955 100644
+--- a/backend/api/auth.py
++++ b/backend/api/auth.py
+@@ -24,6 +24,7 @@ holds a credential that grants admin authority. The two supported modes:
+ """
+ 
+ import os
++import json  # Exact group parsing for workflow integration. Author: Tishneet.
+ 
+ from .responses import ApiError
+ 
+@@ -65,10 +66,25 @@ def require_admin(event):
+ 
+     # prod: trust only claims the API Gateway authorizer established.
+     ctx = (event.get("requestContext") or {}).get("authorizer") or {}
+-    claims = ctx.get("claims") or ctx  # REST (claims) vs HTTP API (flat) shapes
+-    groups = str(claims.get("cognito:groups", "")) + "," + str(claims.get("groups", ""))
++    # Author: Tishneet. Support HTTP API JWT claims and exact group membership;
++    # substring matching would incorrectly grant admin to a 'nonadmin' group.
++    claims = (ctx.get("jwt") or {}).get("claims") or ctx.get("claims") or ctx.get("lambda") or ctx
++    groups = set()
++    for key in ("cognito:groups", "groups"):
++        value = claims.get(key, [])
++        if isinstance(value, str):
++            try:
++                parsed = json.loads(value)
++            except (ValueError, TypeError):
++                parsed = value.replace(" ", ",").split(",")
++            value = parsed if isinstance(parsed, list) else [parsed]
++        if isinstance(value, list):
++            groups.update(group.strip().lower() for group in value if isinstance(group, str))
+     role = claims.get("role") or claims.get("custom:role")
+-    is_admin = "admin" in groups.lower() or role == "admin"
++    is_admin = "admin" in groups or role == "admin"
+     if not is_admin:
+         raise ApiError("FORBIDDEN", "Administrator authorization required.")
+-    return claims.get("email") or claims.get("sub") or "admin"
++    identity = claims.get("email") or claims.get("sub")
++    if not isinstance(identity, str) or not identity.strip():
++        raise ApiError("FORBIDDEN", "Verified administrator identity required.")
++    return identity
+diff --git a/backend/api/backend_ops.py b/backend/api/backend_ops.py
+index 761f482..0d082ff 100644
+--- a/backend/api/backend_ops.py
++++ b/backend/api/backend_ops.py
+@@ -422,5 +422,13 @@ def get_backend():
+     global _SINGLETON
+     if _SINGLETON is None:
+         mode = os.environ.get("SENTINEL_BACKEND", "local")
+-        _SINGLETON = AwsBackendOps() if mode == "aws" else LocalBackendOps()
++        # Integration by Tishneet: retain Ishani's reference modes while adding
++        # the durable workflow adapter used by Compose and the AWS migration.
++        if mode == "workflow":
++            from backend.workflows.api_adapter import WorkflowBackendOps
++            _SINGLETON = WorkflowBackendOps()
++        elif mode in ("local", "aws"):
++            _SINGLETON = AwsBackendOps() if mode == "aws" else LocalBackendOps()
++        else:
++            raise ValueError("SENTINEL_BACKEND must be local, workflow, or aws")
+     return _SINGLETON
+diff --git a/backend/core/simulator.py b/backend/core/simulator.py
+index bcbb94f..5835abf 100644
+--- a/backend/core/simulator.py
++++ b/backend/core/simulator.py
+@@ -22,6 +22,9 @@ Evaluation happens in two passes:
+    even if a later step would have repaired it.
+ """
+ 
++# Python 3.9 verification compatibility; simulator logic unchanged. Author: Tishneet.
++from __future__ import annotations
++
+ import logging
+ import re
+ from collections.abc import Mapping
