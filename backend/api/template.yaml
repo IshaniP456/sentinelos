@@ -76,6 +76,10 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: v1
+      # Regional (not edge-optimized): lower latency from the single event
+      # region and avoids CloudFront propagation flakiness (intermittent 403s).
+      EndpointConfiguration:
+        Type: REGIONAL
       # CORS (headers + OPTIONS preflight) is handled by the Lambda itself so
       # that credentialed requests get a single, correct set of headers.
       # Intentionally NOT setting the Cors property here to avoid duplicates.
