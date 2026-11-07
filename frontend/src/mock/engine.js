@@ -20,6 +20,57 @@ let planCounter = 0
 let approvalCounter = 0
 let auditSeq = 0
 
+// Persist the mock backend's state across page reloads. Without this, a
+// refresh wipes the in-browser engine and an active plan (e.g. one awaiting
+// approval) cannot be recovered — the real backend keeps this state, so the
+// mock must too for the refresh-recovery behaviour to hold in a demo.
+// `plan.seen` is a Set (not JSON-serialisable), so convert to/from an array.
+const STATE_KEY = 'sentinel.mock_state'
+
+function persist() {
+  try {
+    const serializable = {
+      warehouse,
+      agent,
+      audit,
+      planCounter,
+      approvalCounter,
+      auditSeq,
+      plans: Object.fromEntries(
+        Object.entries(plans).map(([id, p]) => {
+          const { seen, ...rest } = p
+          return [id, { ...rest, seen: seen ? Array.from(seen) : [] }]
+        }),
+      ),
+    }
+    localStorage.setItem(STATE_KEY, JSON.stringify(serializable))
+  } catch {
+    /* no localStorage / quota — fall back to in-memory only */
+  }
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(STATE_KEY)
+    if (!raw) return
+    const s = JSON.parse(raw)
+    warehouse = s.warehouse
+    agent = s.agent
+    audit = s.audit || []
+    planCounter = s.planCounter || 0
+    approvalCounter = s.approvalCounter || 0
+    auditSeq = s.auditSeq || 0
+    plans = {}
+    for (const [id, p] of Object.entries(s.plans || {})) {
+      plans[id] = { ...p, seen: new Set(p.seen || []) }
+    }
+  } catch {
+    /* corrupt state — start fresh */
+  }
+}
+
+load()
+
 function pushAudit(plan_id, revision, event_type, outcome, reason_code, message) {
   auditSeq += 1
   audit.unshift({
@@ -417,6 +468,7 @@ export const mockApi = {
       pushAudit(plan_id, 1, 'AUTHORIZATION_DENIED', 'REJECTED', 'AGENT_REVOKED', 'Agent is revoked; plan denied')
     }
     plans[plan_id] = plan
+    persist()
     return { plan_id, status: 'PLANNING' }
   },
 
@@ -427,7 +479,10 @@ export const mockApi = {
       err.payload = { error: { code: 'INVALID_REQUEST', message: 'Unknown plan_id', retryable: false } }
       throw err
     }
-    return buildStatus(plan)
+    // buildStatus advances audit + may commit execution, so persist after.
+    const status = buildStatus(plan)
+    persist()
+    return status
   },
 
   async getAuditLog(plan_id) {
@@ -446,12 +501,14 @@ export const mockApi = {
       plan.approval_decision = decision
       if (decision === 'APPROVED') plan.approved_at = Date.now()
     }
+    persist()
     return { approval_id, status: 'RECORDED' }
   },
 
   async revokeAgent() {
     agent.status = 'REVOKED'
     pushAudit('—', 0, 'AGENT_REVOKED', 'REVOKED', 'ADMIN_REVOCATION', 'Administrator revoked inventory-agent-01')
+    persist()
     return clone(agent)
   },
 
@@ -463,6 +520,7 @@ export const mockApi = {
     planCounter = 0
     approvalCounter = 0
     auditSeq = 0
+    persist()
     return clone(warehouse)
   },
 }
