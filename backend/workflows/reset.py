@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 
 from .errors import WorkflowError
-from .gateway_contracts import normalize_run_id
+from .gateway_contracts import normalize_run_id, gateway_failure, ADMIN_REFUSALS
 from .store import Conflict
 
 TERMINAL = {"COMPLETED", "REJECTED", "FAILED", "EXPIRED"}
@@ -120,22 +120,65 @@ class ResetCoordinator:
             pass
         return None
 
+    def _release_refusal(self, reset_id, refusal):
+        """Clear only this fence after the reset callee guarantees no mutation."""
+        for _ in range(8):
+            version, control = self.store.read("CONTROL")
+            fence = control.get("reset") or {}
+            if fence.get("reset_id") != reset_id:
+                previous = control.get("last_reset_refusal") or {}
+                return previous.get("reset_id") == reset_id
+            control["last_reset_refusal"] = {
+                "reset_id": reset_id, "run_id": fence["previous_run_id"],
+                "admin": fence["admin"], "code": refusal.code,
+                "retryable": refusal.retryable, "refused_at": self._stamp()}
+            control["reset"] = None
+            try:
+                self.store.write("CONTROL", control, version)
+                return True
+            except Conflict:
+                continue
+            except Exception:
+                # The cursor/fence write itself may have committed before its
+                # acknowledgement was lost. Confirm that exact refusal marker.
+                _, latest = self.store.read("CONTROL")
+                return (latest.get("last_reset_refusal") or {}).get("reset_id") == reset_id
+        return False
+
+    def _raise_uncertain(self, reset_id):
+        self._uncertain(reset_id)
+        known = self._known_result(reset_id)
+        if known is not None:
+            return known
+        raise WorkflowError("RESET_UNCONFIRMED",
+                            "Reset outcome is unconfirmed; reconcile " + reset_id + " before new submissions.",
+                            status=503) from None
+
     def reset(self, admin):
         self._admin(admin)
         version, control = self._acquire(admin)
         reset_id = control["reset"]["reset_id"]
         try:
-            warehouse = self._warehouse(self.gateway.reset_demo(version, copy.deepcopy(control), admin))
+            response = self.gateway.reset_demo(version, copy.deepcopy(control), admin)
+        except Exception as error:
+            # no_commit belongs to THIS mutation call, not a later read. A
+            # get_run_id failure after a successful reset cannot clear the fence.
+            refusal = gateway_failure(error, confirmed_only=True)
+            released = False
+            if refusal:
+                try:
+                    released = self._release_refusal(reset_id, refusal)
+                except Exception:
+                    pass
+            if released:
+                raise refusal from None
+            return self._raise_uncertain(reset_id)
+        try:
+            warehouse = self._warehouse(response)
             run_id = normalize_run_id(self.gateway.get_run_id())
             return self._complete(reset_id, run_id, warehouse)
         except Exception:
-            self._uncertain(reset_id)
-            known = self._known_result(reset_id)
-            if known is not None:
-                return known
-            raise WorkflowError("RESET_UNCONFIRMED",
-                                "Reset outcome is unconfirmed; reconcile " + reset_id + " before new submissions.",
-                                status=503) from None
+            return self._raise_uncertain(reset_id)
 
     def reconcile(self, reset_id, admin):
         """Trusted recovery only: inspect current state; never replay a reset call."""
@@ -146,6 +189,10 @@ class ResetCoordinator:
             prior = control.get("last_reset") or {}
             if prior.get("reset_id") == reset_id:
                 return copy.deepcopy(prior["warehouse"])
+            refusal = control.get("last_reset_refusal") or {}
+            if refusal.get("reset_id") == reset_id and refusal.get("code") in ADMIN_REFUSALS:
+                message, status = ADMIN_REFUSALS[refusal["code"]]
+                raise WorkflowError(refusal["code"], message, refusal.get("retryable") is True, status)
             raise WorkflowError("RESET_CONFLICT", "Unknown reset identity.", status=409)
         try:
             run_id = normalize_run_id(self.gateway.get_run_id())

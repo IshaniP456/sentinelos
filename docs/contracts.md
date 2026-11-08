@@ -93,7 +93,7 @@ same (plan_id, revision), as before.
 
 The production adapter module is `backend.security.gateway` (owned by Mariam).
 It wraps her Lambdas and imports `backend.core.simulator` in-process. Workflow
-IAM invokes only warehouse, agent, runid, authorize, execute, audit-append in
+IAM invokes only warehouse, agent, runid, execute, audit-append in
 account737876441172/us-east-1. It has no inventory-table, admin-Lambda, signing-key
 or secrets permissions. The API role separately signs revoke/reset assertions;
 loading or constructing the gateway in the workflow must not load that secret.
@@ -107,16 +107,22 @@ old snapshot. An active plan, including uncertain execution, blocks reset.
 
 The gateway receives `(control_version, control, admin)`; it must not write
 CONTROL. The current response contract expects WarehouseState and a fresh run-ID
-read different from the prior run. This response shape awaits Mariam's final
-confirmation. Only then does the service update CONTROL.run_id and clear the
-fence. Gateway errors, missing run rotation, invalid responses or failed completion
-writes keep the fence durable. It has no automatic expiry or reset retry.
+read different from the prior run, as confirmed by Mariam. Only then does the
+service update CONTROL.run_id and clear the fence. Unconfirmed gateway errors,
+missing run rotation, invalid responses or failed completion writes keep it durable. It has no automatic expiry or reset retry.
 
 Trusted recovery uses `reconcile_reset(reset_id, admin)`, reads current run and
 warehouse, and clears only the matching fence after run rotation is confirmed.
-It never invokes the reset Lambda again. If a reset was refused and the run has
-not changed, the fence stays blocked pending a separately agreed guaranteed
-reset-refusal/recovery contract; no unsafe timeout-based cancellation is supplied.
+It never invokes the reset Lambda again. An agreed GatewayError with exact
+`no_commit=True` from the reset mutation itself releases only the matching fence
+and persists a refusal marker. Refusal codes retain their HTTP status and boolean
+retry flag; raw messages are never exposed. A later read failure cannot undo a
+successful reset or clear its fence. Unknown outcomes stay fenced.
+
+Published gateway a4b262f uses labeled LOCAL_POLICY authorization in-process;
+Verified Permissions is not active. Its executor currently reads approval.status,
+which conflicts with the agreed outbound approval.decision envelope. Elevated
+execution is blocked until Mariam aligns her executor (see integration-readiness.md).
 
 ## Durable storage and audit
 

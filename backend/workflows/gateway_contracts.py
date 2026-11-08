@@ -11,6 +11,32 @@ NO_COMMIT_ERRORS = {
     "APPROVAL_INVALID": "The executor rejected the approval binding.",
 }
 
+ADMIN_REFUSALS = {
+    "VERSION_CONFLICT": ("The gateway refused this operation because current state could not permit it.", 409),
+    "FORBIDDEN": ("The gateway refused administrator authorization.", 403),
+    "NOT_FOUND": ("The gateway could not find the required resource.", 404),
+    "INVALID_REQUEST": ("The gateway rejected the administrative request.", 400),
+    "INTERNAL_ERROR": ("The gateway could not configure or perform this operation.", 503),
+}
+
+
+def gateway_failure(error, confirmed_only=False):
+    """Read Mariam's GatewayError protocol without importing her implementation.
+
+    Only exact booleans and agreed codes qualify. Never use exception messages,
+    signing assertions or response bodies as operator-visible error text.
+    """
+    no_commit = getattr(error, "no_commit", None)
+    code = getattr(error, "code", None)
+    if type(no_commit) is not bool or not isinstance(code, str) or code not in ADMIN_REFUSALS:
+        return None
+    if confirmed_only and not no_commit:
+        return None
+    if not no_commit:
+        return WorkflowError("GATEWAY_UNCONFIRMED", "Gateway outcome is unconfirmed; inspect current state before retrying.", status=502)
+    message, status = ADMIN_REFUSALS[code]
+    return WorkflowError(code, message, getattr(error, "retryable", False) is True, status)
+
 
 def normalize_run_id(value):
     """Gateway may unwrap its Lambda response itself; persist only the string."""

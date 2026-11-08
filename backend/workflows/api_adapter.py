@@ -3,7 +3,14 @@ import os
 
 from backend.api.responses import ApiError
 from .errors import WorkflowError
+from .gateway_contracts import gateway_failure
 from .factory import create_service
+
+
+def _api_error(error):
+    converted = ApiError(error.code, error.message, status=error.status)
+    converted.retryable = error.retryable
+    return converted
 
 
 class WorkflowBackendOps:
@@ -20,9 +27,12 @@ class WorkflowBackendOps:
         try:
             return function(*args)
         except WorkflowError as exc:
-            error = ApiError(exc.code, exc.message, status=exc.status)
-            error.retryable = exc.retryable
-            raise error from exc
+            raise _api_error(exc) from exc
+        except Exception as exc:
+            converted = gateway_failure(exc)
+            if converted is None:
+                raise
+            raise _api_error(converted) from exc
 
     def start_plan(self, instruction):
         from .aws import WorkflowStartError
@@ -51,7 +61,14 @@ class WorkflowBackendOps:
         return self._call(self.service.record_approval, approval_id, decision, admin)
 
     def revoke_agent(self, admin):
-        return self._call(self.service.gateway.revoke_agent, admin)
+        try:
+            return self._call(self.service.gateway.revoke_agent, admin)
+        except ApiError:
+            raise
+        except Exception:
+            raise _api_error(WorkflowError(
+                "GATEWAY_UNCONFIRMED", "Revocation outcome is unconfirmed; refresh agent status before retrying.",
+                status=502)) from None
 
     def reset_demo(self, admin):
         return self._call(self.service.reset_demo, admin)

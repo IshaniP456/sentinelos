@@ -26,6 +26,13 @@ SEED = {"warehouse_id": "demo-warehouse", "version": 1,
 GOAL = "Move five packages from Zone A to Zone C."
 
 
+class GatewayRefusal(Exception):
+    """Contract double for Mariam's exception; no owner-source import required."""
+    def __init__(self, code, no_commit, retryable=False):
+        super().__init__("private-signing-or-transport-detail")
+        self.code, self.no_commit, self.retryable = code, no_commit, retryable
+
+
 class GatewayDouble:
     name = "CONTRACT_DOUBLE"
 
@@ -271,7 +278,7 @@ class GatewayContractTests(unittest.TestCase):
         self.assertEqual(self.make_service().reconcile_reset(reset_id, "verified-admin"), SEED)
         self.assertEqual(len(self.gateway.reset_calls), 1)
 
-    def test_workflow_iam_has_only_own_table_and_six_nonadmin_callees(self):
+    def test_workflow_iam_has_only_own_table_and_five_nonadmin_callees(self):
         class TemplateLoader(yaml.SafeLoader):
             pass
         def tagged(loader, tag, node):
@@ -290,10 +297,10 @@ class GatewayContractTests(unittest.TestCase):
                 self.assertEqual(statement["Resource"], {"GetAtt": "WorkflowTable.Arn"})
         parameter = template["Parameters"]["TrustedFunctionArns"]
         arns = parameter["Default"].split(",")
-        self.assertEqual(len(set(arns)), 6)
+        self.assertEqual(len(set(arns)), 5)
         self.assertEqual({a.rsplit(":", 1)[1] for a in arns}, {
             "sentinel-data-warehouse", "sentinel-data-agent", "sentinel-data-runid",
-            "sentinel-security-authorize", "sentinel-data-execute", "sentinel-data-audit-append"})
+            "sentinel-data-execute", "sentinel-data-audit-append"})
         for arn in arns:
             self.assertRegex(arn, parameter["AllowedPattern"])
         for name in ("sentinel-data-revoke", "sentinel-data-reset"):
@@ -324,6 +331,91 @@ class GatewayContractTests(unittest.TestCase):
         result = self.service.reset_demo("verified-admin")
         self.assertEqual(result, SEED)
         self.assertNotIn("secret-debug", json.dumps(self.store.read("CONTROL")))
+
+    def test_confirmed_gateway_refusal_clears_only_its_fence_and_preserves_error(self):
+        for code, status in (("VERSION_CONFLICT", 409), ("FORBIDDEN", 403), ("NOT_FOUND", 404),
+                             ("INVALID_REQUEST", 400), ("INTERNAL_ERROR", 503)):
+            with self.subTest(code=code):
+                self.setUp()
+                def refuse(*args):
+                    raise GatewayRefusal(code, True, retryable=code == "VERSION_CONFLICT")
+                self.gateway.on_reset = refuse
+                error = self.assert_error(code, lambda: self.service.reset_demo("verified-admin"))
+                self.assertEqual(error.status, status)
+                self.assertEqual(error.retryable, code == "VERSION_CONFLICT")
+                self.assertNotIn("private-signing", str(error))
+                control = self.store.read("CONTROL")[1]
+                self.assertIsNone(control["reset"])
+                self.assertEqual(control["run_id"], "run-original")
+                self.assertEqual(control["last_reset_refusal"]["code"], code)
+                self.assertNotIn("private-signing", json.dumps(control))
+                self.assert_error(code, lambda: self.service.reconcile_reset(
+                    control["last_reset_refusal"]["reset_id"], "verified-admin"))
+                self.assertEqual(self.service.start_plan(GOAL)["status"], "PLANNING")
+                self.assertEqual(len(self.gateway.reset_calls), 1)
+
+    def test_ambiguous_gateway_error_keeps_reset_fenced(self):
+        for no_commit in (False, None, "true", 1):
+            with self.subTest(no_commit=no_commit):
+                self.setUp()
+                def ambiguous(*args):
+                    raise GatewayRefusal("INTERNAL_ERROR", no_commit)
+                self.gateway.on_reset = ambiguous
+                self.assert_error("RESET_UNCONFIRMED", lambda: self.service.reset_demo("verified-admin"))
+                self.assertIsNotNone(self.store.read("CONTROL")[1]["reset"])
+                self.assert_error("RESET_IN_PROGRESS", lambda: self.service.start_plan(GOAL))
+
+    def test_read_failure_after_success_is_not_mistaken_for_reset_refusal(self):
+        original_read = self.gateway.get_run_id
+        def reset_then_fail_read(*args):
+            self.gateway.run_id = "run-committed"
+            def denied_read():
+                raise GatewayRefusal("NOT_FOUND", True)
+            self.gateway.get_run_id = denied_read
+            return self.gateway.get_warehouse()
+        self.gateway.on_reset = reset_then_fail_read
+        self.assert_error("RESET_UNCONFIRMED", lambda: self.service.reset_demo("verified-admin"))
+        reset_id = self.store.read("CONTROL")[1]["reset"]["reset_id"]
+        self.gateway.get_run_id = original_read
+        self.assertEqual(self.service.reconcile_reset(reset_id, "verified-admin"), SEED)
+        self.assertEqual(len(self.gateway.reset_calls), 1)
+
+    def test_lost_refusal_cursor_ack_does_not_leave_a_phantom_reset(self):
+        original_write = self.store.write
+        def lost_ack(key, value, expected):
+            result = original_write(key, value, expected)
+            if key == "CONTROL" and value.get("last_reset_refusal") and value.get("reset") is None:
+                raise TimeoutError("Control write reply lost")
+            return result
+        self.store.write = lost_ack
+        def refused(*args):
+            raise GatewayRefusal("VERSION_CONFLICT", True, True)
+        self.gateway.on_reset = refused
+        self.assert_error("VERSION_CONFLICT", lambda: self.service.reset_demo("verified-admin"))
+        self.assertIsNone(self.store.read("CONTROL")[1]["reset"])
+
+    def test_refusal_clear_storage_failure_keeps_the_original_fence(self):
+        original_write = self.store.write
+        def unavailable_write(key, value, expected):
+            if key == "CONTROL" and value.get("last_reset_refusal") and value.get("reset") is None:
+                raise OSError("Cannot persist refusal completion")
+            return original_write(key, value, expected)
+        self.store.write = unavailable_write
+        def refused(*args):
+            raise GatewayRefusal("FORBIDDEN", True)
+        self.gateway.on_reset = refused
+        self.assert_error("RESET_UNCONFIRMED", lambda: self.service.reset_demo("verified-admin"))
+        self.assertIsNotNone(self.store.read("CONTROL")[1]["reset"])
+
+    def test_old_refusal_cannot_clear_a_newer_reset_fence(self):
+        def replace_then_refuse(*args):
+            version, control = self.store.read("CONTROL")
+            control["reset"]["reset_id"] = "newer-reset"
+            self.store.write("CONTROL", control, version)
+            raise GatewayRefusal("FORBIDDEN", True)
+        self.gateway.on_reset = replace_then_refuse
+        self.assert_error("RESET_UNCONFIRMED", lambda: self.service.reset_demo("verified-admin"))
+        self.assertEqual(self.store.read("CONTROL")[1]["reset"]["reset_id"], "newer-reset")
 
 
 if __name__ == "__main__":

@@ -187,6 +187,27 @@ def tool_response(candidate=None):
 
 
 class BedrockTests(unittest.TestCase):
+    def test_nova_wire_schema_uses_supported_subset_but_backend_stays_strict(self):
+        client = FakeBedrock(tool_response())
+        provider = BedrockProvider(client, "amazon.nova-pro-v1:0")
+        provider.generate("Move 3 packages from A to C", WAREHOUSE)
+        wire = client.requests[0]["toolConfig"]["tools"][0]["toolSpec"]["inputSchema"]["json"]
+        self.assertEqual(set(wire), {"type", "properties", "required"})
+        action = wire["properties"]["actions"]["items"]
+        self.assertEqual(action["properties"]["type"]["enum"], ["move_packages"])
+        self.assertNotIn("const", json.dumps(wire))
+        self.assertNotIn("additionalProperties", json.dumps(wire))
+        self.assertFalse(provider.schema["additionalProperties"])
+        self.assertEqual(provider.schema["properties"]["actions"]["maxItems"], 10)
+        invalid = plan()
+        invalid["approved"] = True
+        self.assertFalse(validate_plan(invalid)["valid"])
+
+    def test_reduced_schema_does_not_alias_backend_required_fields(self):
+        provider = BedrockProvider(FakeBedrock(tool_response()), "amazon.nova-pro-v1:0")
+        provider.tool_schema["required"].append("untrusted")
+        self.assertEqual(provider.schema["required"], ["actions"])
+
     def test_tool_extraction_and_untrusted_data_boundary(self):
         client = FakeBedrock(tool_response())
         provider = BedrockProvider(client, "configured-model")

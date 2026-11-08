@@ -76,6 +76,30 @@ class ApiWorkflowTests(unittest.TestCase):
         self.assertEqual(response["statusCode"], 202)
         self.assertIn("plan_id", json.loads(response["body"]))
 
+    def test_gateway_admin_refusals_keep_their_http_status_and_do_not_leak_details(self):
+        class GatewayError(Exception):
+            code = "FORBIDDEN"
+            no_commit = True
+            retryable = False
+        def refuse(admin):
+            raise GatewayError("private-signing-detail")
+        self.service.gateway.revoke_agent = refuse
+        response = self.call("POST", "/v1/agents/current/revoke", {}, {"sub": "admin-1", "groups": ["admin"]})
+        self.assertEqual(response["statusCode"], 403)
+        self.assertEqual(json.loads(response["body"])["error"]["code"], "FORBIDDEN")
+        self.assertNotIn("private-signing-detail", response["body"])
+
+    def test_ambiguous_revoke_failure_is_not_presented_as_safe_to_retry(self):
+        def lost_ack(admin):
+            raise TimeoutError("private-transport-detail")
+        self.service.gateway.revoke_agent = lost_ack
+        response = self.call("POST", "/v1/agents/current/revoke", {}, {"sub": "admin-1", "groups": ["admin"]})
+        self.assertEqual(response["statusCode"], 502)
+        error = json.loads(response["body"])["error"]
+        self.assertEqual(error["code"], "GATEWAY_UNCONFIRMED")
+        self.assertFalse(error["retryable"])
+        self.assertNotIn("private-transport-detail", response["body"])
+
 
 if __name__ == "__main__":
     unittest.main()

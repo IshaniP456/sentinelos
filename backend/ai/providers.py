@@ -10,6 +10,7 @@ from pathlib import Path
 import time
 
 from .intent import parse_instruction
+from .tool_schema import converse_tool_schema
 
 TOOL_NAME = "propose_plan"
 SYSTEM_PROMPT = (
@@ -110,6 +111,7 @@ class BedrockProvider:
         self.force_tool = force_tool
         self.metrics = {}
         self.schema = json.loads(Path(__file__).with_name("plan.schema.json").read_text())
+        self.tool_schema = converse_tool_schema(self.schema)
 
     def generate(self, instruction, warehouse, failed_plan=None, simulation_result=None, attempt=1):
         start = time.monotonic()
@@ -124,7 +126,7 @@ class BedrockProvider:
         tools = {"tools": [{"toolSpec": {
             "name": TOOL_NAME,
             "description": "Propose ordered package transfers; does not execute or authorize them.",
-            "inputSchema": {"json": self.schema},
+            "inputSchema": {"json": self.tool_schema},
         }}]}
         # Not all Converse models support forced tool choice. Enable only after
         # checking the selected model; strict extraction below always applies.

@@ -41,7 +41,7 @@ Mariam contract alignment is implemented in the backend: admin-aware remote
 reset with durable CONTROL fencing, trusted reset reconciliation, canonical
 outbound executor approval fields, and preservation of guaranteed no-commit error
 codes. Internal/public approval shape is unchanged. The IAM template limits the
-workflow to her six agreed Lambda callees and its own workflow table.
+workflow to her five published gateway Lambda callees and its own workflow table.
 
 For Ishani, the actual local fixture-backed GET response is committed under
 `docs/examples/plan-status.fixture.completed.json`. The ready-to-send message for

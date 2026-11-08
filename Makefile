@@ -1,5 +1,5 @@
 # Author: Tishneet
-.PHONY: up down test test-integration integration-up demo aws-build build-WorkflowFunction
+.PHONY: up down test test-integration integration-up demo bedrock-smoke aws-build build-WorkflowFunction
 up:
 	bash scripts/dev.sh up --build
 down:
@@ -14,5 +14,7 @@ demo:
 	bash scripts/dev.sh exec api python -m scripts.demo
 aws-build:
 	bash scripts/aws_build.sh
+bedrock-smoke:
+	bash scripts/bedrock_smoke.sh
 build-WorkflowFunction:
 	python3 scripts/build_lambda.py

@@ -35,7 +35,7 @@ These checks do **not** constitute AWS service validation or deployment.
    set `SENTINEL_TRUSTED_ADAPTER_MODULE=backend.security.gateway`.
    Missing adapters must fail closed. Mariam's gateway wraps her privileged
    Lambdas; the workflow does not access her inventory/agent/audit tables or
-   signing key. The template now restricts invocation to her six agreed functions
+   signing key. The template now restricts invocation to her five published gateway functions
    in account737876441172/us-east-1. Revoke/reset are API-role operations only.
 3. Finish Ishani's authenticated API connection. Approvals, revocation and reset
    must receive a backend-established administrator identity. Never deploy open
@@ -62,6 +62,14 @@ For an isolated lint/build/import check without installing SAM on the host:
 bash scripts/aws_build.sh
 ```
 Inspect the generated changeset and IAM before a separately authorized deploy.
+
+Run `make bedrock-smoke` after configuring temporary credentials outside Git. It
+makes two real model calls against scripted snapshots, validates generation and
+replanning, and performs zero inventory operations. Nova Pro is the target;
+successful account/model access still needs live evidence. The model-facing tool
+schema uses Nova's supported subset while the complete independent backend
+validator remains authoritative. See [Nova tool definitions](https://docs.aws.amazon.com/nova/latest/userguide/tool-use-definition.html).
+Failures stop the check; fixtures never replace a failed Bedrock call.
 
 Required runtime configuration:
 
