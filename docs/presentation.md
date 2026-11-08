@@ -147,7 +147,8 @@ _Say: "Bedrock Guardrails asks 'is this text safe to say?' We ask 'is this actio
 **Honest limitations / next:**
 - One warehouse, one agent, one operation (move packages) — by design for the demo.
 - The judged walkthrough uses a labeled, deterministic path for reliability; the live AI stack is real underneath.
-- Next: multi-warehouse, multiple agents, more operations, and a production auth provider.
+- Admin actions (approve/revoke/reset) run behind a **demo-grade authorizer** today; the API already runs `AUTH_MODE=prod` and reads `cognito:groups` + `email`, so the production path is a **drop-in Cognito user pool + `admin` group** — no code rewrite.
+- Next: multi-warehouse, multiple agents, more operations, and the Cognito admin login above.
 
 ---
 
