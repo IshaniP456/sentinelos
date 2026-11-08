@@ -81,6 +81,12 @@ for STACK in sentinel-workflow-tishneet sentinelos-api; do
 done
 ```
 
+**Result, Nov 8 2026:** run from the workshop terminal against the deployed
+account, every role in `sentinel-workflow-tishneet` and `sentinelos-api`
+returned `implicitDeny` for `PutItem`, `UpdateItem` and `DeleteItem` on
+`sentinel_warehouse`. An agent, the workflow, or the API cannot change
+inventory except by sending a plan through the executor.
+
 ## 4. Latency
 
 Local stages (in-process on a laptop, 2000 calls each):
