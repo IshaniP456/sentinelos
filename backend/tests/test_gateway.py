@@ -190,10 +190,10 @@ def test_execute_with_workflow_approval_envelope(aws):
     gw = TrustedGateway(invoke=in_process())
     plan = {"actions": [move("A", "B", 2), move("A", "C", 3)]}
     run_id = gw.get_run_id()
-    approval = {"approval_id": "approval-abc", "status": "APPROVED", "revision": 2,
+    # Exactly what the workflow's gateway_contracts.execution_approval sends.
+    approval = {"approval_id": "approval-abc", "plan_id": "plan-d2", "revision": 2,
                 "fingerprint": plan_fingerprint(plan), "warehouse_version": 1, "run_id": run_id,
-                "expires_epoch": 1, "expires_at": "x", "admin": "alice@scu.edu",
-                "decision_at": "2026-11-07T23:59:00Z"}
+                "decision": "APPROVED", "admin": "alice@scu.edu", "decided_at": "2026-11-07T23:59:00Z"}
 
     result = gw.execute_plan(plan_id="plan-d2", revision=2, plan=plan, warehouse_version=1,
                              run_id=run_id, approval=approval)

@@ -93,7 +93,7 @@ def execute_plan(
 
     total = sum(action["count"] for action in plan["actions"])
     if total >= APPROVAL_THRESHOLD:
-        approval_problem = _check_approval(approval, revision, plan, warehouse_version, run_id)
+        approval_problem = _check_approval(approval, plan_id, revision, plan, warehouse_version, run_id)
         if approval_problem:
             code, message = approval_problem
             return _no_commit(plan_id, revision, code, message)
@@ -152,15 +152,27 @@ def _check_inputs(plan_id: Any, revision: Any, version: Any, run_id: Any, approv
     return None
 
 
-def _check_approval(approval: Any, revision: int, plan: Any, version: int, run_id: str) -> tuple[str, str] | None:
-    """Return (code, message) if the approval does not authorize this exact plan."""
+def _check_approval(
+    approval: Any, plan_id: str, revision: int, plan: Any, version: int, run_id: str
+) -> tuple[str, str] | None:
+    """Return (code, message) if the approval does not authorize this exact plan.
+
+    Agreed envelope (built by the workflow's execution_approval):
+    {approval_id, plan_id, revision, fingerprint, warehouse_version, run_id,
+     decision, admin, decided_at}. Every binding field must match.
+    """
     if approval is None:
         return "APPROVAL_REQUIRED", "Plans moving 5 or more packages need administrator approval."
-    if approval.get("status") != "APPROVED":
-        return "APPROVAL_INVALID", "Approval is not in APPROVED state."
+    if approval.get("decision") != "APPROVED":
+        return "APPROVAL_INVALID", "Approval decision is not APPROVED."
     admin = approval.get("admin")
     if not isinstance(admin, str) or not admin.strip():
         return "APPROVAL_INVALID", "Approval does not identify the deciding administrator."
+    decided_at = approval.get("decided_at")
+    if not isinstance(decided_at, str) or not decided_at.strip():
+        return "APPROVAL_INVALID", "Approval does not record when it was decided."
+    if approval.get("plan_id") != plan_id:
+        return "APPROVAL_INVALID", "Approval was given for a different plan."
     if approval.get("revision") != revision:
         return "APPROVAL_INVALID", "Approval was given for a different plan revision."
     if approval.get("fingerprint") != plan_fingerprint(plan):

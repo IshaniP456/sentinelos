@@ -53,16 +53,18 @@ def version():
     return dynamo.get_warehouse()["version"]
 
 
-def approval_for(p, rev, wh_version, run, /, **overrides):
+def approval_for(p, rev, wh_version, run, /, plan_id="plan-1", **overrides):
+    """The agreed executor envelope, exactly as the workflow's execution_approval builds it."""
     record = {
         "approval_id": "approval-1",
-        "status": "APPROVED",
+        "plan_id": plan_id,
         "revision": rev,
         "fingerprint": plan_fingerprint(p),
         "warehouse_version": wh_version,
         "run_id": run,
+        "decision": "APPROVED",
         "admin": "alice@scu.edu",
-        "decision_at": "2026-11-07T23:30:00Z",
+        "decided_at": "2026-11-07T23:30:00Z",
     }
     record.update(overrides)
     return record
@@ -105,7 +107,7 @@ def test_d1_d2_d3_walkthrough_exact_states(db):
     split = plan(move("A", "B", 2), move("A", "C", 3))
     unapproved = execute(split, plan_id="plan-d2", revision=2)
     assert_no_commit(unapproved, "APPROVAL_REQUIRED", {"A": 17, "B": 8, "C": 8}, 2)
-    d2 = execute(split, plan_id="plan-d2", revision=2, approval=approval_for(split, 2, 2, run_id()))
+    d2 = execute(split, plan_id="plan-d2", revision=2, approval=approval_for(split, 2, 2, run_id(), plan_id="plan-d2"))
     assert d2["executed"] is True
     assert inventory() == {"A": 12, "B": 10, "C": 11} and version() == 3
     assert d2["warehouse"]["zones"]["B"] == {"inventory": 10, "capacity": 10}
@@ -139,7 +141,7 @@ def test_commit_writes_marker_and_audit_event(db):
 
 def test_approved_execution_audit_names_the_admin(db):
     split = plan(move("A", "B", 2), move("A", "C", 3))
-    execute(split, plan_id="plan-a", approval=approval_for(split, 1, 1, run_id()))
+    execute(split, plan_id="plan-a", approval=approval_for(split, 1, 1, run_id(), plan_id="plan-a"))
 
     [event] = dynamo.list_audit_events("plan-a")
     assert event["admin"] == "alice@scu.edu"
@@ -265,9 +267,13 @@ def test_plan_from_before_reset_is_rejected(db):
 @pytest.mark.parametrize(
     "overrides",
     [
-        pytest.param({"status": "PENDING"}, id="pending"),
-        pytest.param({"status": "DENIED"}, id="denied"),
+        pytest.param({"decision": "PENDING"}, id="pending"),
+        pytest.param({"decision": "DENIED"}, id="denied"),
+        pytest.param({"decision": None}, id="no-decision"),
         pytest.param({"admin": ""}, id="no-admin"),
+        pytest.param({"decided_at": ""}, id="no-decided-at"),
+        pytest.param({"decided_at": None}, id="null-decided-at"),
+        pytest.param({"plan_id": "plan-other"}, id="other-plan-id"),
         pytest.param({"revision": 2}, id="other-revision"),
         pytest.param({"fingerprint": "0" * 64}, id="other-plan"),
         pytest.param({"warehouse_version": 2}, id="other-version"),
@@ -437,3 +443,26 @@ def test_fingerprint_matches_tishneets_function_when_available():
     ]
     for p in plans:
         assert plan_fingerprint(p) == workflow_fingerprint(p)
+
+
+def test_legacy_status_only_envelope_is_rejected(db):
+    """The agreed field is 'decision'; an envelope with only 'status' must not execute."""
+    split = plan(move("A", "B", 2), move("A", "C", 3))
+    legacy = approval_for(split, 1, 1, run_id())
+    legacy["status"] = legacy.pop("decision")
+    legacy["decision_at"] = legacy.pop("decided_at")
+
+    result = execute(split, approval=legacy)
+
+    assert_no_commit(result, "APPROVAL_INVALID", {"A": 20, "B": 8, "C": 5}, 1)
+
+
+def test_approved_replay_is_still_idempotent(db):
+    split = plan(move("A", "B", 2), move("A", "C", 3))
+    approval = approval_for(split, 1, 1, run_id())
+    first = execute(split, approval=approval, warehouse_version=1)
+
+    again = execute(split, approval=approval, warehouse_version=1)
+
+    assert again == first and first["executed"] is True
+    assert version() == 2 and markers() == 1
