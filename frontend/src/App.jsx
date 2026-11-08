@@ -11,6 +11,7 @@ import WorkflowStatus from './components/WorkflowStatus.jsx'
 import ApprovalModal from './components/ApprovalModal.jsx'
 import AuditLog from './components/AuditLog.jsx'
 import AgentControls from './components/AgentControls.jsx'
+import ImageAttackPanel from './components/ImageAttackPanel.jsx'
 
 const POLL_MS = 2000
 
@@ -91,6 +92,22 @@ export default function App() {
     setSubmitting(true)
     try {
       const { plan_id } = await api.submitPlan(instruction)
+      planIdRef.current = plan_id
+      savePlanId(plan_id)
+      setPlan(await api.getPlanStatus(plan_id))
+      setEvents((await api.getAuditLog()).events)
+    } catch (e) {
+      setError(errMessage(e))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleSubmitImage = async (meta) => {
+    setError(null)
+    setSubmitting(true)
+    try {
+      const { plan_id } = await api.submitImage(meta)
       planIdRef.current = plan_id
       savePlanId(plan_id)
       setPlan(await api.getPlanStatus(plan_id))
@@ -222,6 +239,8 @@ export default function App() {
               </div>
               <WorkflowStatus plan={plan} />
             </div>
+
+            <ImageAttackPanel onSubmitImage={handleSubmitImage} plan={plan} submitting={submitting} />
 
             <PlanComparison plan={plan} />
 

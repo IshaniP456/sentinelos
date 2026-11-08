@@ -56,6 +56,16 @@ export function submitPlan(instruction) {
   return request('POST', '/plans', { instruction })
 }
 
+// Image prompt-injection input (Tishneet's image contract). Exactly one body
+// variant: image (never mixed with text). Scripted preset adds demo_mode.
+// Browser never holds model credentials.
+export function submitImage({ image_b64, mime_type, demo_mode } = {}) {
+  if (MOCK) return mockApi.submitImage({ image_b64, mime_type, demo_mode })
+  const body = { image_b64, mime_type }
+  if (demo_mode) body.demo_mode = demo_mode
+  return request('POST', '/plans', body)
+}
+
 export function getPlanStatus(planId) {
   if (MOCK) return mockApi.getPlanStatus(planId)
   return request('GET', `/plans/${encodeURIComponent(planId)}`)

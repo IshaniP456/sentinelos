@@ -265,6 +265,16 @@ class LocalBackendOps(BackendOps):
 
     def _build_status(self, plan):
         elapsed = time.time() - plan["started_at"]
+        if plan.get("image_rejected"):
+            return {
+                "plan_id": plan["plan_id"], "status": "REJECTED", "agent_id": plan["agent_id"],
+                "instruction": plan["instruction"], "attempt": 1,
+                "warehouse_version": self.warehouse["version"],
+                "candidates": plan["candidates"], "risk": None, "approval": None,
+                "execution": None, "updated_at": _iso(time.time()),
+                "input_metadata": plan["input_metadata"],
+                "error": {"code": "AUTHORIZATION_DENIED", "message": "An action is not authorized.", "retryable": False},
+            }
         if plan.get("rejected_auth"):
             return {
                 "plan_id": plan["plan_id"], "status": "REJECTED", "agent_id": plan["agent_id"],
@@ -346,6 +356,37 @@ class LocalBackendOps(BackendOps):
         if plan["rejected_auth"]:
             self._push_audit(plan_id, 1, "AUTHORIZATION_DENIED", "REJECTED", "AGENT_REVOKED", "Agent is revoked; plan denied")
         self.plans[plan_id] = plan
+        return {"plan_id": plan_id, "status": "PLANNING"}
+
+    def start_image_plan(self, image_b64, mime_type, demo_mode=None):
+        # Reference image path mirroring Tishneet's contract: the (untrusted)
+        # image instruction proposes an over-limit move; Verified Permissions
+        # denies it (LIMIT_EXCEEDED). Deterministic; no model call here.
+        self._plan_n += 1
+        plan_id = f"plan-{self._plan_n:03d}"
+        scripted = demo_mode == "image_injection_v1" or not image_b64
+        actions = [{"type": "move_packages", "from": "A", "to": "C", "count": 11}]
+        auth = self._authorize(actions)
+        auth["engine"] = "VERIFIED_PERMISSIONS"
+        provider = "SCRIPTED_IMAGE_FIXTURE" if scripted else "BEDROCK"
+        plan = {
+            "plan_id": plan_id, "agent_id": self.agent["agent_id"],
+            "instruction": "Move 11 packages from Zone A to Zone C.",
+            "image_rejected": True, "started_at": time.time(),
+            "candidates": [{
+                "revision": 1, "plan": {"actions": actions}, "authorization": auth,
+                "simulation": None, "provenance": provider,
+                "metrics": {"model_calls": 0 if scripted else 1, "provider": provider, "usage": {}},
+            }],
+            "input_metadata": {
+                "type": "image", "mode": "scripted" if scripted else "live",
+                "demo_mode": demo_mode, "mime_type": mime_type,
+                "intent_source": "UNTRUSTED_IMAGE_EXTRACTION",
+            },
+        }
+        self.plans[plan_id] = plan
+        self._push_audit(plan_id, 1, "AUTHORIZATION_DENIED", "REJECTED", "LIMIT_EXCEEDED",
+                         "Blocked — exceeds the agent's per-action limit")
         return {"plan_id": plan_id, "status": "PLANNING"}
 
     def get_plan_status(self, plan_id):
@@ -486,6 +527,11 @@ class AwsBackendOps(BackendOps):
             input=_json.dumps({"plan_id": plan_id, "agent_id": self._agent_id, "instruction": instruction}),
         )
         return {"plan_id": plan_id, "status": "PLANNING"}
+
+    def start_image_plan(self, image_b64, mime_type, demo_mode=None):
+        # Image plans run through the workflow backend (SENTINEL_BACKEND=workflow),
+        # which hosts the multimodal provider. Not available on the ARN-invoke path.
+        raise ApiError("INVALID_REQUEST", "Image plans require the workflow backend.", status=501)
 
     def get_plan_status(self, plan_id):
         # Tishneet exposes the workflow status/history shaped to PlanStatus (§5.1).

@@ -43,9 +43,34 @@ def _body(event):
 # --- per-endpoint handlers --------------------------------------------------
 
 def submit_plan(event):
-    # The browser submits ONLY the instruction (contract §2.4). The backend
-    # assigns plan_id, agent, revisions, etc.
-    instruction = _body(event).get("instruction")
+    # Exactly one input variant — text OR image, never mixed (image contract).
+    # Text: {instruction}. Image: {image_b64, mime_type, demo_mode?}.
+    body = _body(event)
+    keys = set(body.keys())
+    has_text = "instruction" in keys
+    has_image = "image_b64" in keys
+
+    if has_text and has_image:
+        raise ApiError("INVALID_REQUEST", "Provide either 'instruction' or an image, not both.")
+
+    if has_image:
+        extra = keys - {"image_b64", "mime_type", "demo_mode"}
+        if extra:
+            raise ApiError("INVALID_REQUEST", f"Unexpected field(s): {', '.join(sorted(extra))}.")
+        image_b64 = body.get("image_b64")
+        mime = body.get("mime_type")
+        if not isinstance(image_b64, str) or not image_b64:
+            raise ApiError("INVALID_REQUEST", "Field 'image_b64' (base64 string) is required.")
+        if mime not in ("image/png", "image/jpeg"):
+            raise ApiError("INVALID_REQUEST", "mime_type must be image/png or image/jpeg.")
+        # Browser never holds model creds; backend decodes + runs the model.
+        return ok(get_backend().start_image_plan(image_b64, mime, body.get("demo_mode")), status=202)
+
+    # Text plan (contract §2.4): browser submits only the instruction.
+    extra = keys - {"instruction"}
+    if extra:
+        raise ApiError("INVALID_REQUEST", f"Unexpected field(s): {', '.join(sorted(extra))}.")
+    instruction = body.get("instruction")
     if not isinstance(instruction, str):
         raise ApiError("INVALID_REQUEST", "Field 'instruction' (string) is required.")
     return ok(get_backend().start_plan(instruction), status=202)
