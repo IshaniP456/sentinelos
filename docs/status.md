@@ -28,6 +28,14 @@ request was run this session and the plan_id is recorded below._
 
 > Pending (A3–A5): re-run D1/D2/D3 via the **deployed API by curl** and record fresh plan_ids here.
 
+## A2 — API ↔ workflow wiring (verified 2026-11-08 09:17 UTC)
+`/v1` URL: `https://hsudj7t7s2.execute-api.us-east-1.amazonaws.com/v1`
+- `GET /v1/warehouse` → **A 20/30, B 8/10, C 5/20, version 1, HAZMAT restricted** (seed). ✅
+- API Lambda env matches `docs/deployment/api-env.json` exactly; `DYNAMODB_ENDPOINT_URL` absent. ✅
+- API role inline policy matches `docs/deployment/api-policy.json` exactly (StartExecution, SendTaskSuccess, DynamoDB on the workflow table, InvokeFunction on the five `sentinel-data-*`) + retained `secretsmanager:GetSecretValue`. ✅
+- Deployed Lambda packages the merged `workflows/ai/security/core` (built from the combined artifact). ✅
+- `sentinel-data-reset` already has `STATE_MACHINE_ARN` set (Mariam's reset guard). ✅
+- **Not redeployed:** the running config already matches the handoff exactly; a redeploy would be a no-op and risks the working stack. Repo-template reconciliation (the committed `backend/api/template.yaml` still shows `Backend=aws`) is tracked as a doc/reproducibility follow-up, not a change to the running system.
+
 ## Notes
-- The deployed API Lambda is already in workflow mode; the committed `backend/api/template.yaml` still describes the earlier `Backend=aws` shape (A2 reconciles the repo to the deployed reality).
 - Measured numbers + security posture: see the "Measured" section (added in B2).
