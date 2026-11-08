@@ -36,26 +36,47 @@ its own — no human in the loop needed."*
 
 ---
 
-## D2 — reject → replan → approve → execute (the core story)
+## D2 — large move → safe split → human approval → execute (the core story)
 
-**Instruction:** `Run preflight test: move five packages from Zone A to Zone B.`
+**Instruction:** `Move five packages out of Zone A, preferably into Zone B. Use another zone if necessary.`
 
-**What happens:** five into Zone B would overflow it (room for 2). The
-whole-plan **simulation catches it before anything commits**, the agent
-**replans** a valid split, and because it's a large move (≥5 packages) it
-**pauses for your approval**.
+**What happens:** Zone B can't take all five (room for 2). The agent plans a
+**safe split** that respects every zone's capacity, and because it's a large
+move (≥5 packages) it **pauses for your approval** before committing.
 
-**Click:** "Over capacity" preset → **Submit** → watch it get blocked and
-replan → an **approval modal** appears → click **Approve**.
+> Note on the live model: real Nova usually proposes the safe split directly
+> (it self-corrects), so you may not see a visible "rejected first attempt" —
+> that dramatic reject-then-replan is shown deterministically in **mock mode**.
+> On live, the guardrail you *see* is the **approval gate**.
 
-**Expected end state:** the commit lands and **version increments to 2 → 3**.
-The exact split varies with the live model, but it always fits capacity (verified
-live, `plan-8ddf0e4fcca9418e971f29bbda2939dc`: approve → commit, re-approving the
-same plan is a no-op — no double-execute).
+**Click:** "Big move" preset → **Submit** → an **approval modal** appears →
+click **Approve** → watch the workflow steps finish green.
 
-**Fallback line:** *"The agent was wrong, and the system caught it — not by
-reading the words, but by simulating what the plan would do to the warehouse.
-Then a human signed off before anything moved."*
+**Expected end state:** commit lands, **version 1 → 2** (verified live,
+`plan-d5267916045a44f4b4a26d13b4e1eb69`: approve → COMPLETED, A 15 · B 10 · C 8;
+re-approving the same plan is a no-op — no double-execute).
+
+**Fallback line:** *"The agent wanted to overfill a zone; SentinelOS made it
+plan a safe split and held it for a human to sign off before anything moved."*
+
+---
+
+## D2b (bonus) — hard block: the guardrail refuses
+
+**Instruction:** `Move five packages from Zone A to Zone B.` (the "Over capacity" preset)
+
+**What happens:** the agent proposes putting all 5 into Zone B. Authorization
+*allows* it (policy-wise it's fine), but the **whole-plan simulation refuses**:
+Zone B would reach **13 / 10**. With the instruction pinned to B there's no safe
+alternative, so the plan is **blocked and nothing moves** — the warehouse is
+untouched.
+
+**What you'll see:** in "What the AI proposed," the candidate shows **✗ Would
+break a zone**, Authorization ✓, and the simulation violation *"Zone B would
+reach 13 / 10."* The workflow panel shows Authorization ✓ → Simulation ✗.
+
+**Fallback line:** *"Here the agent couldn't be saved — the only move it was
+told to make was unsafe, so SentinelOS simply refused. Nothing moved."*
 
 ---
 

@@ -11,7 +11,9 @@ const PRESETS = [
   { title: 'Big move', hint: 'Move 5 out of A. Large, so it pauses for your approval.', text: 'Move five packages out of Zone A, preferably into Zone B. Use another zone if necessary.' },
   {
     title: 'Over capacity',
-    hint: 'Force 5 into B (only fits 2). Blocked — the AI retries a safe split.',
+    hint: IS_MOCK
+      ? 'Force 5 into B (only fits 2). Blocked — the AI retries a safe split.'
+      : 'Force 5 into B (only fits 2). Simulation blocks it — nothing moves.',
     text: IS_MOCK
       ? 'Run preflight test: move five packages from Zone A to Zone B.'
       : 'Move five packages from Zone A to Zone B.',
