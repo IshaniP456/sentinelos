@@ -54,12 +54,23 @@ API Gateway authorizer's claims; the workflow factory refuses `open`/`dev` in AW
 runtime. With no authorizer configured, every admin action (Approve / Revoke /
 Reset) returns 403. **D1 (no admin) works via curl** — `plan-42afbee0319e4faeb634fbfe78be7af4` → COMPLETED, A17/B8/C8 v2.
 
-Impact: A4 (D2 approve), A5 (D3 revoke + reset), and A7 (D2/D3 through the
-deployed UI) cannot pass through the deployed API until an authorizer exists.
+**RESOLVED (2026-11-08):** added a **demo-grade API Gateway Lambda authorizer**
+(`backend/api/demo_authorizer.py`) that grants administrator to every caller so
+the `prod`-mode admin routes work. ⚠️ Demo-grade only — not real authentication;
+a production deploy replaces it with a real IdP (Cognito). Labeled as such here
+and on the status slide. (Colon-free `role: admin` context, since API Gateway
+mangles context keys with a colon.)
 
-Fix options (need a decision): (a) add a small demo Lambda authorizer to the API
-Gateway that grants admin — a NEW resource, so needs approval; or (b) keep the
-UI on mock for the approval/revocation steps (D1 real, D2/D3 mock).
+### A3–A5 — live via curl against the deployed API, sequential from one reset
+| Step | plan_id | Result |
+|---|---|---|
+| A3 · D1 | `plan-012a42e85bfb464eb5c47a595c629087` | COMPLETED → A17/B8/C8 v2 ✅ |
+| A4 · D2 | `plan-8ddf0e4fcca9418e971f29bbda2939dc` | split A→B×2 + A→C×3, authz+sim pass → AWAITING_APPROVAL → approve → COMPLETED A12/B10/C11 v3 ✅; **2nd approve = no change** (no double-execute) ✅ |
+| A5 · D3 | `plan-2501762e4f68406e910bb4f0e76365bf` | revoke → REJECTED, unchanged A12/B10/C11 v3 → reset → seed ✅ |
+
+Note: real Nova proposed the valid D2 split directly (1 candidate, no visible
+rejection) — expected per the PRD; the capacity-rejection visual uses the
+labeled preflight preset.
 
 ## Notes
 - Measured numbers + security posture: see the "Measured" section (added in B2).
