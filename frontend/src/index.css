@@ -10,14 +10,23 @@
   }
 
   body {
-    @apply bg-ink-900 text-slate-200 antialiased;
-    font-feature-settings: 'tnum' 1;
+    @apply bg-ink-900 font-sans text-slate-200 antialiased;
+    font-feature-settings: 'tnum' 1, 'cv11' 1;
+    /* Cinematic layered glow — subtle, not a generic AI gradient. */
+    background-image:
+      radial-gradient(60rem 40rem at 78% -8%, rgba(245, 180, 60, 0.10), transparent 60%),
+      radial-gradient(50rem 36rem at -6% 8%, rgba(106, 168, 255, 0.07), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, h3 {
+    @apply font-display;
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-xl border border-ink-600 bg-ink-800 shadow-lg;
+    @apply rounded-2xl border border-ink-500/80 bg-ink-800/80 shadow-card backdrop-blur-sm;
   }
 
   .card-pad {
@@ -25,24 +34,40 @@
   }
 
   .label {
-    @apply text-xs font-semibold uppercase tracking-wider text-slate-400;
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
-      text-sm font-semibold transition-colors disabled:cursor-not-allowed
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2
+      text-sm font-semibold transition-all disabled:cursor-not-allowed
       disabled:opacity-50;
   }
 
+  /* Primary = signature gold with a soft glow (the "do it" action). */
   .btn-primary {
-    @apply btn bg-status-blue text-white hover:bg-blue-500;
+    @apply btn bg-brand text-ink-900 hover:bg-brand-bright;
+    box-shadow: 0 0 0 1px rgba(245, 180, 60, 0.35), 0 10px 30px -12px rgba(245, 180, 60, 0.6);
   }
 
   .btn-danger {
-    @apply btn bg-status-red text-white hover:bg-red-500;
+    @apply btn bg-status-red text-white hover:brightness-110;
   }
 
   .btn-ghost {
-    @apply btn border border-ink-500 bg-ink-700 text-slate-200 hover:bg-ink-600;
+    @apply btn border border-ink-500 bg-ink-700/60 text-slate-200 hover:bg-ink-600;
+  }
+
+  /* Tab pill navigation */
+  .tab {
+    @apply relative rounded-xl px-4 py-2 text-sm font-semibold text-slate-400
+      transition-colors hover:text-slate-100;
+  }
+  .tab-active {
+    @apply text-ink-900;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1
+      text-[11px] font-semibold uppercase tracking-wide;
   }
 }

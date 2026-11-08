@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as api from './services/api.js'
+import { IS_MOCK } from './services/api.js'
 import { TERMINAL_STATUSES } from './mock/data.js'
-import Header from './components/Header.jsx'
-import WarehouseOverview from './components/WarehouseOverview.jsx'
+import TabNav from './components/TabNav.jsx'
+import AboutView from './components/AboutView.jsx'
+import ZonesPanel from './components/ZonesPanel.jsx'
 import AgentConsole from './components/AgentConsole.jsx'
 import PlanComparison from './components/PlanComparison.jsx'
 import WorkflowStatus from './components/WorkflowStatus.jsx'
@@ -12,19 +14,22 @@ import AgentControls from './components/AgentControls.jsx'
 
 const POLL_MS = 2000
 
-// Persist the active plan id so a page refresh can recover an in-flight or
-// pending-approval plan (PRD FR11 "active plan can be retrieved" / NFR03).
 const PLAN_KEY = 'sentinel.active_plan_id'
 const savePlanId = (id) => { try { localStorage.setItem(PLAN_KEY, id) } catch { /* ignore */ } }
 const loadPlanId = () => { try { return localStorage.getItem(PLAN_KEY) } catch { return null } }
 const clearPlanId = () => { try { localStorage.removeItem(PLAN_KEY) } catch { /* ignore */ } }
 
-// Turn the standard error object (contract §3.6) into a readable message.
 function errMessage(e) {
   return e?.payload?.error?.message || e?.message || 'Something went wrong.'
 }
 
+const TABS = [
+  { id: 'about', label: 'Overview' },
+  { id: 'operations', label: 'Operations' },
+]
+
 export default function App() {
+  const [tab, setTab] = useState('about')
   const [warehouse, setWarehouse] = useState(null)
   const [agent, setAgent] = useState(null)
   const [plan, setPlan] = useState(null)
@@ -46,8 +51,6 @@ export default function App() {
     }
   }, [])
 
-  // Initial load — fetch static state, then rehydrate any persisted plan so a
-  // refresh recovers an active/pending plan (PRD FR11 / NFR03).
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -61,29 +64,21 @@ export default function App() {
           setPlan(status)
         }
       } catch {
-        // Stale id (e.g. after a reset or backend restart) — drop it quietly.
         clearPlanId()
       }
     })()
-    return () => {
-      cancelled = true
-    }
+    return () => { cancelled = true }
   }, [refreshStatic])
 
-  // Poll the active plan every 2s while it is non-terminal (PRD FR11 / §5.5).
   useEffect(() => {
     if (!plan || TERMINAL_STATUSES.includes(plan.status)) return
     const id = setInterval(async () => {
       try {
         const next = await api.getPlanStatus(planIdRef.current)
         setPlan(next)
-        // Keep audit + warehouse fresh as the workflow emits events / commits.
         const log = await api.getAuditLog()
         setEvents(log.events)
-        if (next.status === 'COMPLETED') {
-          const w = await api.getWarehouse()
-          setWarehouse(w)
-        }
+        if (next.status === 'COMPLETED') setWarehouse(await api.getWarehouse())
       } catch (e) {
         setError(errMessage(e))
       }
@@ -98,10 +93,8 @@ export default function App() {
       const { plan_id } = await api.submitPlan(instruction)
       planIdRef.current = plan_id
       savePlanId(plan_id)
-      const status = await api.getPlanStatus(plan_id)
-      setPlan(status)
-      const log = await api.getAuditLog()
-      setEvents(log.events)
+      setPlan(await api.getPlanStatus(plan_id))
+      setEvents((await api.getAuditLog()).events)
     } catch (e) {
       setError(errMessage(e))
     } finally {
@@ -113,9 +106,11 @@ export default function App() {
     setBusy(true)
     try {
       await fn(approvalId)
-      // Immediately re-poll so the modal closes and execution begins.
-      const next = await api.getPlanStatus(planIdRef.current)
-      setPlan(next)
+      // Refresh plan AND the activity log immediately — a denial makes the plan
+      // terminal, which stops polling, so the log must be pulled here or it
+      // would freeze on the old "pending" entry.
+      setPlan(await api.getPlanStatus(planIdRef.current))
+      setEvents((await api.getAuditLog()).events)
     } catch (e) {
       setError(errMessage(e))
     } finally {
@@ -124,88 +119,119 @@ export default function App() {
   }
 
   const handleRevoke = async () => {
-    setBusy(true)
-    setError(null)
+    setBusy(true); setError(null)
     try {
-      const a = await api.revokeAgent()
-      setAgent(a)
-      const log = await api.getAuditLog()
-      setEvents(log.events)
-    } catch (e) {
-      setError(errMessage(e))
-    } finally {
-      setBusy(false)
-    }
+      setAgent(await api.revokeAgent())
+      setEvents((await api.getAuditLog()).events)
+    } catch (e) { setError(errMessage(e)) } finally { setBusy(false) }
   }
 
   const handleReset = async () => {
-    // Guard: don't reset while a workflow is active (PRD FR13).
     if (plan && !TERMINAL_STATUSES.includes(plan.status)) {
       setError('Cannot reset while a plan is active. Wait for it to finish or be denied.')
       return
     }
-    setBusy(true)
-    setError(null)
+    setBusy(true); setError(null)
     try {
       await api.resetDemo()
       planIdRef.current = null
       clearPlanId()
       setPlan(null)
       await refreshStatic()
-    } catch (e) {
-      setError(errMessage(e))
-    } finally {
-      setBusy(false)
-    }
+    } catch (e) { setError(errMessage(e)) } finally { setBusy(false) }
   }
 
-  // Overlay the active candidate's projected state onto the warehouse cards
-  // while a plan is mid-flight (and not yet committed).
+  // Zone management (mock-mode demo feature).
+  const zoneOp = async (fn) => {
+    setBusy(true); setError(null)
+    try {
+      setWarehouse(await fn())
+      setEvents((await api.getAuditLog()).events)
+    } catch (e) { setError(errMessage(e)) } finally { setBusy(false) }
+  }
+  const handleAddZone = (name, cap, inv) => zoneOp(() => api.addZone(name, cap, inv))
+  const handleEditZone = (name, patch) => zoneOp(() => api.editZone(name, patch))
+  const handleRemoveZone = (name) => zoneOp(() => api.removeZone(name))
+
+  const handleClearLog = async () => {
+    try {
+      await api.clearAudit()
+      setEvents([])
+    } catch (e) { setError(errMessage(e)) }
+  }
+
   const activeCandidate =
     plan && !['COMPLETED'].includes(plan.status)
       ? plan.candidates?.find((c) => c.revision === (plan.approval?.revision ?? plan.candidates.length))
       : null
-  const projectedState =
-    activeCandidate?.simulation?.passed ? activeCandidate.simulation.projected_state : null
-
+  const projectedState = activeCandidate?.simulation?.passed ? activeCandidate.simulation.projected_state : null
   const agentRevoked = agent?.status && agent.status !== 'ACTIVE'
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-      <Header agent={agent} warehouse={warehouse} onReset={handleReset} busy={busy} />
-
-      {error && (
-        <div className="mt-4 flex items-start justify-between rounded-lg border border-status-red/40 bg-status-red/10 p-3 text-sm text-status-red">
-          <span>{error}</span>
-          <button className="ml-4 text-xs underline" onClick={() => setError(null)}>
-            dismiss
-          </button>
-        </div>
-      )}
-
-      <main className="mt-6 space-y-6">
-        <WarehouseOverview warehouse={warehouse} projectedState={projectedState} />
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <AgentConsole
-              onSubmit={handleSubmit}
-              plan={plan}
-              submitting={submitting}
-              error={null}
-              revoked={agentRevoked}
-            />
+    <div className="min-h-full">
+      {/* Top bar */}
+      <header className="sticky top-0 z-40 border-b border-ink-500/60 bg-ink-900/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/15 text-brand shadow-glow">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div className="font-display text-lg font-bold tracking-tight text-white">
+              Sentinel<span className="text-brand">OS</span>
+            </div>
           </div>
-          <WorkflowStatus plan={plan} />
-        </div>
 
-        <PlanComparison plan={plan} />
+          <div className="order-last w-full sm:order-none sm:ml-4 sm:w-auto">
+            <TabNav tabs={TABS} active={tab} onChange={setTab} />
+          </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <AgentControls agent={agent} onRevoke={handleRevoke} busy={busy} />
-          <AuditLog events={events} />
+          <div className="ml-auto flex items-center gap-2">
+            {IS_MOCK && <span className="chip border-status-amber/40 bg-status-amber/10 text-status-amber">Demo</span>}
+            <span className="font-mono text-xs text-slate-500">{warehouse ? `v${warehouse.version}` : '—'}</span>
+            <button className="btn-ghost px-3 py-1.5 text-xs" onClick={handleReset} disabled={busy}>Reset</button>
+          </div>
         </div>
-      </main>
+      </header>
+
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        {error && (
+          <div className="mb-5 flex items-start justify-between rounded-xl border border-status-red/40 bg-status-red/10 p-3 text-sm text-status-red">
+            <span>{error}</span>
+            <button className="ml-4 text-xs underline" onClick={() => setError(null)}>dismiss</button>
+          </div>
+        )}
+
+        {tab === 'about' ? (
+          <AboutView onStart={() => setTab('operations')} />
+        ) : (
+          <main className="space-y-6">
+            <ZonesPanel
+              warehouse={warehouse}
+              projectedState={projectedState}
+              onAddZone={handleAddZone}
+              onEditZone={handleEditZone}
+              onRemoveZone={handleRemoveZone}
+              busy={busy}
+            />
+
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <AgentConsole onSubmit={handleSubmit} plan={plan} submitting={submitting} error={null} revoked={agentRevoked} />
+              </div>
+              <WorkflowStatus plan={plan} />
+            </div>
+
+            <PlanComparison plan={plan} />
+
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <AgentControls agent={agent} onRevoke={handleRevoke} busy={busy} />
+              <AuditLog events={events} onClear={handleClearLog} />
+            </div>
+          </main>
+        )}
+      </div>
 
       <ApprovalModal
         plan={plan}
@@ -214,7 +240,7 @@ export default function App() {
         busy={busy}
       />
 
-      <footer className="mt-10 border-t border-ink-600 pt-4 text-center text-xs text-slate-600">
+      <footer className="mx-auto max-w-6xl px-4 py-8 text-center text-xs text-slate-600 sm:px-6">
         SentinelOS · AWS × A10 Hackathon · AI proposes, the backend decides.
       </footer>
     </div>

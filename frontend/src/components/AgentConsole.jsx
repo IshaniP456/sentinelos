@@ -1,22 +1,16 @@
 import { useState } from 'react'
 import { statusTone, TONE } from '../lib/format.js'
 
+// Example requests. Each fills the box so people can see what the agent does.
 const PRESETS = [
-  { label: 'Demo 1 · low-risk', text: 'Move three packages from Zone A to Zone C.' },
-  {
-    label: 'Demo 2 · replan + approval',
-    text: 'Move five packages out of Zone A, preferably into Zone B. Use another zone if necessary.',
-  },
-  { label: 'Run preflight test (A→B×5)', text: 'Run preflight test: move five packages from Zone A to Zone B.' },
+  { title: 'Simple move', hint: 'Move 3 from A → C. Low-risk, so it runs on its own.', text: 'Move three packages from Zone A to Zone C.' },
+  { title: 'Big move', hint: 'Move 5 out of A. Large, so it pauses for your approval.', text: 'Move five packages out of Zone A, preferably into Zone B. Use another zone if necessary.' },
+  { title: 'Over capacity', hint: 'Force 5 into B (only fits 2). Blocked — the AI retries a safe split.', text: 'Run preflight test: move five packages from Zone A to Zone B.' },
 ]
 
-// The AI instruction console. The browser submits ONLY the instruction string
-// (contract §2.4) — the backend assigns plan_id, agent, revisions, etc.
-//
-// NOTE: when the agent is revoked we deliberately KEEP submission enabled. The
-// backend must be the thing that denies the request (returns AGENT_REVOKED) —
-// disabling the button would only hide the denial, which is exactly what
-// Demo 3 needs to show (timeline Phase 4). `revoked` is informational only.
+// The browser submits ONLY the instruction string (contract §2.4); the backend
+// assigns plan_id/agent/revisions. When revoked we keep submit enabled so the
+// backend is what denies it (Demo 3) — `revoked` is informational only.
 export default function AgentConsole({ onSubmit, plan, submitting, error, revoked }) {
   const [text, setText] = useState('')
 
@@ -32,53 +26,50 @@ export default function AgentConsole({ onSubmit, plan, submitting, error, revoke
   return (
     <section className="card card-pad">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="label">AI Instruction Console</h2>
+        <h2 className="label">Tell the agent what to do</h2>
         {plan && (
           <span className={`flex items-center gap-2 text-xs font-semibold ${tone.text}`}>
             <span className={`h-2 w-2 rounded-full ${tone.dot}`} />
-            {plan.status.replace(/_/g, ' ')} · {plan.plan_id}
+            {plan.status.replace(/_/g, ' ')}
           </span>
         )}
       </div>
 
-      <form onSubmit={handleSubmit}>
-        <textarea
-          className="h-24 w-full resize-none rounded-lg border border-ink-500 bg-ink-900 p-3 text-sm text-slate-100 placeholder-slate-600 focus:border-status-blue focus:outline-none focus:ring-1 focus:ring-status-blue"
-          placeholder="e.g. Move three packages from Zone A to Zone C."
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button type="submit" className="btn-primary" disabled={submitting || !text.trim()}>
-            {submitting ? 'Submitting…' : 'Submit Instruction'}
-          </button>
-          {revoked && (
-            <span className="text-xs text-status-amber">
-              Agent is revoked — submitting is allowed, but the backend will deny it (expected for Demo 3).
-            </span>
-          )}
-        </div>
-      </form>
-
-      <div className="mt-4">
-        <div className="label mb-2">Presets</div>
-        <div className="flex flex-wrap gap-2">
+      {/* Examples first — the easiest way in */}
+      <div className="mb-3">
+        <div className="mb-1.5 text-xs text-slate-500">Tap an example, then Submit:</div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {PRESETS.map((p) => (
             <button
-              key={p.label}
+              key={p.title}
               type="button"
-              className="rounded-md border border-ink-500 bg-ink-700 px-2.5 py-1 text-xs text-slate-300 hover:bg-ink-600 disabled:opacity-40"
               onClick={() => setText(p.text)}
+              className="rounded-xl border border-ink-500 bg-ink-700/60 px-3 py-2 text-left transition-colors hover:border-brand/50 hover:bg-ink-600"
             >
-              {p.label}
+              <div className="text-sm font-semibold text-white">{p.title}</div>
+              <div className="text-[11px] text-slate-400">{p.hint}</div>
             </button>
           ))}
         </div>
       </div>
 
+      <form onSubmit={handleSubmit}>
+        <textarea
+          className="h-20 w-full resize-none rounded-xl border border-ink-500 bg-ink-900 p-3 text-sm text-slate-100 placeholder-slate-600 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          placeholder="…or type your own, e.g. Move 2 packages from A to B."
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button type="submit" className="btn-primary" disabled={submitting || !text.trim()}>
+            {submitting ? 'Submitting…' : 'Submit'}
+          </button>
+          {revoked && <span className="text-xs text-status-amber">Agent revoked — the backend will deny this.</span>}
+        </div>
+      </form>
+
       {error && (
-        <div className="mt-3 rounded-lg border border-status-red/40 bg-status-red/10 p-3 text-sm text-status-red">
+        <div className="mt-3 rounded-xl border border-status-red/40 bg-status-red/10 p-3 text-sm text-status-red">
           {error}
         </div>
       )}

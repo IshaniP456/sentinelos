@@ -490,6 +490,13 @@ export const mockApi = {
     return { events: clone(events) }
   },
 
+  async clearAudit() {
+    audit = []
+    auditSeq = 0
+    persist()
+    return { events: [] }
+  },
+
   async decideApproval(approval_id, decision) {
     const plan = Object.values(plans).find((p) => p.approval_id === approval_id)
     if (!plan) {
@@ -520,6 +527,54 @@ export const mockApi = {
     planCounter = 0
     approvalCounter = 0
     auditSeq = 0
+    persist()
+    return clone(warehouse)
+  },
+
+  // --- zone management (mock-only; the real backend has fixed zones) ----------
+  async addZone(name, capacity, inventory = 0) {
+    const z = String(name || '').trim().toUpperCase()
+    if (!z || !/^[A-Z][A-Z0-9]?$/.test(z)) {
+      const e = new Error('Zone name must be 1–2 letters/digits (e.g. D, E2).')
+      e.payload = { error: { code: 'INVALID_REQUEST', message: e.message, retryable: false } }
+      throw e
+    }
+    if (warehouse.zones[z]) {
+      const e = new Error(`Zone ${z} already exists.`)
+      e.payload = { error: { code: 'INVALID_REQUEST', message: e.message, retryable: false } }
+      throw e
+    }
+    const cap = Math.max(1, Math.floor(Number(capacity) || 0))
+    const inv = Math.max(0, Math.min(cap, Math.floor(Number(inventory) || 0)))
+    warehouse.zones[z] = { inventory: inv, capacity: cap }
+    warehouse.version += 1
+    pushAudit('—', 0, 'ZONE_ADDED', 'COMPLETED', null, `Zone ${z} created (${inv}/${cap})`)
+    persist()
+    return clone(warehouse)
+  },
+
+  async editZone(name, { inventory, capacity } = {}) {
+    const z = String(name || '').toUpperCase()
+    const zone = warehouse.zones[z]
+    if (!zone) {
+      const e = new Error(`Unknown zone ${z}.`)
+      e.payload = { error: { code: 'NOT_FOUND', message: e.message, retryable: false } }
+      throw e
+    }
+    if (capacity != null) zone.capacity = Math.max(1, Math.floor(Number(capacity)))
+    if (inventory != null) zone.inventory = Math.max(0, Math.min(zone.capacity, Math.floor(Number(inventory))))
+    warehouse.version += 1
+    pushAudit('—', 0, 'ZONE_EDITED', 'COMPLETED', null, `Zone ${z} set to ${zone.inventory}/${zone.capacity}`)
+    persist()
+    return clone(warehouse)
+  },
+
+  async removeZone(name) {
+    const z = String(name || '').toUpperCase()
+    if (!warehouse.zones[z]) return clone(warehouse)
+    delete warehouse.zones[z]
+    warehouse.version += 1
+    pushAudit('—', 0, 'ZONE_REMOVED', 'COMPLETED', null, `Zone ${z} removed`)
     persist()
     return clone(warehouse)
   },
