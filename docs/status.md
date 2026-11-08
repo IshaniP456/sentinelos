@@ -124,9 +124,13 @@ _Honest single-session observations — **two observed calls, not a percentile d
   markers (`sentinel_executions`) — re-approving an already-executed plan is a
   no-op (verified in A4: 2nd approve = no change).
 - Admin actions: signed HMAC-SHA256 assertions server-side; the deployed API
-  runs `AUTH_MODE=prod` behind an API Gateway authorizer. The current authorizer
-  is **demo-grade** (grants admin to every caller) — labeled as such; production
-  swaps in a real IdP (Cognito). No secrets in the browser.
+  runs `AUTH_MODE=prod` behind an API Gateway authorizer. No secrets in the browser.
+  **Canonical honest statement (use verbatim in pitch / slides / submission):**
+  > Admin actions require an authorizer's admin claim. Demo-grade here: the demo
+  > authorizer grants admin to any caller. Production = Cognito user pool + admin
+  > group, which `auth.py` already reads in prod mode.
+
+  We do **not** describe this as a "real admin login" anywhere.
 
 ### Production admin auth — designed, not deployed (intentional for the demo)
 `AUTH_MODE=prod` means `auth.py` already consumes real identity claims — it reads
@@ -151,3 +155,6 @@ deployed state**, no change needed.
 
 ## Notes
 - See the "Measured" section above for numbers + security posture.
+- **Post-judging security:** lock or remove the public demo authorizer right after
+  judging — one command, see [`docs/post-judging-teardown.md`](post-judging-teardown.md)
+  (`./scripts/post_judging_teardown.sh denyall`). Not run yet; the demo needs the stack.
