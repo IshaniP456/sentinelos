@@ -37,5 +37,29 @@ request was run this session and the plan_id is recorded below._
 - `sentinel-data-reset` already has `STATE_MACHINE_ARN` set (Mariam's reset guard). ✅
 - **Not redeployed:** the running config already matches the handoff exactly; a redeploy would be a no-op and risks the working stack. Repo-template reconciliation (the committed `backend/api/template.yaml` still shows `Backend=aws`) is tracked as a doc/reproducibility follow-up, not a change to the running system.
 
+## A6 — deployed frontend wiring (2026-11-08)
+- `amplify.yml` added: builds `frontend/`; the two env vars to set in the Amplify
+  console are **`VITE_MOCK=false`** and **`VITE_API_BASE_URL=https://hsudj7t7s2.execute-api.us-east-1.amazonaws.com/v1`**. (The current app is a manual-zip deploy, so the equivalent flip is a local build with those vars + redeploy.)
+- Zone add/edit/remove are now hidden when `VITE_MOCK` is false (real warehouse has fixed zones).
+- **CORS verified:** the deployed API returns `access-control-allow-origin: https://main.d1awkbyla46117.amplifyapp.com`. ✅
+
+## ⛔ BLOCKER — admin auth on the deployed API (blocks A4, A5, A6-flip, A7)
+Verified by curl 2026-11-08:
+- `POST /v1/demo/reset` → **403** `{"error":{"code":"FORBIDDEN","message":"Administrator authorization required."}}`
+- `POST /v1/approvals/{id}` → **403** (same)
+- `aws apigateway get-authorizers --rest-api-id hsudj7t7s2` → **`[]`** (no authorizer).
+
+Root cause: the deployed Lambda runs `SENTINEL_AUTH_MODE=prod`, which requires an
+API Gateway authorizer's claims; the workflow factory refuses `open`/`dev` in AWS
+runtime. With no authorizer configured, every admin action (Approve / Revoke /
+Reset) returns 403. **D1 (no admin) works via curl** — `plan-42afbee0319e4faeb634fbfe78be7af4` → COMPLETED, A17/B8/C8 v2.
+
+Impact: A4 (D2 approve), A5 (D3 revoke + reset), and A7 (D2/D3 through the
+deployed UI) cannot pass through the deployed API until an authorizer exists.
+
+Fix options (need a decision): (a) add a small demo Lambda authorizer to the API
+Gateway that grants admin — a NEW resource, so needs approval; or (b) keep the
+UI on mock for the approval/revocation steps (D1 real, D2/D3 mock).
+
 ## Notes
 - Measured numbers + security posture: see the "Measured" section (added in B2).

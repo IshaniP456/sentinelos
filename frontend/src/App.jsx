@@ -231,6 +231,7 @@ export default function App() {
               onEditZone={handleEditZone}
               onRemoveZone={handleRemoveZone}
               busy={busy}
+              editable={IS_MOCK}
             />
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
