@@ -1,0 +1,12 @@
+{
+  "SENTINEL_BACKEND": "workflow",
+  "SENTINEL_RUNTIME": "aws",
+  "SENTINEL_STORE": "dynamodb",
+  "SENTINEL_STATE_MACHINE_ARN": "arn:aws:states:us-east-1:737876441172:stateMachine:WorkflowStateMachine-xOljcGvrjU3e",
+  "SENTINEL_WORKFLOW_TABLE": "sentinel-workflow-tishneet-WorkflowTable-INY7ZA3DJ03A",
+  "SENTINEL_TRUSTED_ADAPTER_MODULE": "backend.security.gateway",
+  "SENTINEL_APPROVAL_TIMEOUT": "600",
+  "SENTINEL_MODEL_PROVIDER": "bedrock",
+  "BEDROCK_MODEL_ID": "amazon.nova-pro-v1:0",
+  "SENTINEL_AUTH_MODE": "prod"
+}

@@ -1,0 +1,52 @@
+# Author: Tishneet. Local fixture environment only; no AWS credentials required.
+name: sentinelos-backend
+x-workflow: &workflow
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  environment: &environment
+    SENTINEL_RUNTIME: local
+    SENTINEL_BACKEND: workflow
+    SENTINEL_STORE: dynamodb
+    SENTINEL_MODEL_PROVIDER: fixture
+    SENTINEL_WORKFLOW_TABLE: sentinel_workflow
+    DYNAMODB_ENDPOINT_URL: http://dynamodb:8000
+    AWS_REGION: us-east-1
+    SENTINEL_APPROVAL_TIMEOUT: '600'
+  depends_on:
+    - dynamodb
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:2.6.1
+    # Docker creates the named volume as root; this local-only emulator needs
+    # write access to its SQLite directory on a fresh volume.
+    user: '0:0'
+    working_dir: /home/dynamodblocal
+    command: '-jar DynamoDBLocal.jar -sharedDb -dbPath ./data'
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+  worker:
+    <<: *workflow
+    profiles: [integration]
+    command: python -m scripts.run_integration worker
+  api:
+    <<: *workflow
+    profiles: [integration]
+    command: python -m scripts.run_integration api
+    environment:
+      <<: *environment
+      SENTINEL_AUTH_MODE: open
+      SENTINEL_API_HOST: 0.0.0.0
+      SENTINEL_CORS_ORIGIN: http://localhost:5173
+    ports:
+      - '127.0.0.1:8000:8000'
+  test:
+    <<: *workflow
+    profiles: [test]
+    command: python -m pytest backend/tests/test_ai.py backend/tests/test_bedrock_smoke.py backend/tests/test_store.py backend/tests/test_dynamodb_store.py backend/tests/test_contribution_setup.py backend/tests/test_gateway_contracts.py -q
+  test-integration:
+    <<: *workflow
+    profiles: [integration-test]
+    command: python -m scripts.run_integration test
+volumes:
+  dynamodb-data:

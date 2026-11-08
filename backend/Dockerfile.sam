@@ -1,0 +1,7 @@
+# Author: Tishneet. Isolated local validation/build tools; no AWS credentials.
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends make \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir aws-sam-cli==1.145.0 cfn-lint==1.40.2
+WORKDIR /app
+ENV SAM_CLI_TELEMETRY=0 AWS_DEFAULT_REGION=us-east-1

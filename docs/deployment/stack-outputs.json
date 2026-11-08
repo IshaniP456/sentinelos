@@ -1,0 +1,6 @@
+{
+  "WorkflowTableName": "sentinel-workflow-tishneet-WorkflowTable-INY7ZA3DJ03A",
+  "StateMachineArn": "arn:aws:states:us-east-1:737876441172:stateMachine:WorkflowStateMachine-xOljcGvrjU3e",
+  "WorkflowFunctionArn": "arn:aws:lambda:us-east-1:737876441172:function:sentinel-workflow-tishneet-WorkflowFunction-PkpCTVYu9W96",
+  "WorkflowTableArn": "arn:aws:dynamodb:us-east-1:737876441172:table/sentinel-workflow-tishneet-WorkflowTable-INY7ZA3DJ03A"
+}

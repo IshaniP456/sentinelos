@@ -1,0 +1,23 @@
+{
+  "provider": "BEDROCK",
+  "model_id": "amazon.nova-pro-v1:0",
+  "region": "us-east-1",
+  "checked_at": "2026-11-08T01:02:25.174571+00:00",
+  "model_calls": 2,
+  "warehouse_source": "SCRIPTED_DEMO_SNAPSHOTS",
+  "inventory_operations": 0,
+  "checks": {
+    "generation_schema_intent": true,
+    "replan_schema_intent_capacity": true
+  },
+  "generation_metrics": {
+    "provider": "BEDROCK",
+    "latency_ms": 1012.241,
+    "usage": {"inputTokens": 704, "outputTokens": 43, "totalTokens": 747}
+  },
+  "replan_metrics": {
+    "provider": "BEDROCK",
+    "latency_ms": 697.707,
+    "usage": {"inputTokens": 843, "outputTokens": 43, "totalTokens": 886}
+  }
+}
