@@ -126,6 +126,15 @@ export default function PlanComparison({ plan }) {
         <p className="text-sm italic text-slate-300">“{plan.instruction}”</p>
       </div>
 
+      {/* FR14: label a scripted preflight so the initial rejection is never
+          mistaken for an unexpected autonomous model mistake. */}
+      {/preflight/i.test(plan.instruction) && (
+        <div className="mb-3 rounded-lg border border-status-amber/40 bg-status-amber/10 p-2.5 text-xs text-status-amber">
+          <span className="font-semibold">Scripted preflight test.</span> The initial candidate is
+          intentionally scripted to demonstrate the capacity rejection; the replan is real.
+        </div>
+      )}
+
       <div className={`grid grid-cols-1 gap-4 ${plan.candidates.length > 1 ? 'lg:grid-cols-2' : ''}`}>
         {plan.candidates.map((c) => (
           <CandidatePanel key={c.revision} candidate={c} isActive={c.revision === activeRevision} />

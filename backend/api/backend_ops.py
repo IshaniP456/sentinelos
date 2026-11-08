@@ -521,10 +521,26 @@ _SINGLETON = None
 
 
 def get_backend():
-    """Return the configured BackendOps. ``SENTINEL_BACKEND=local`` (default)
-    uses the in-process reference; ``aws`` uses the production seam."""
+    """Return the configured BackendOps.
+
+    - ``local`` (default): in-process reference backend.
+    - ``aws``: production seam invoking teammates' Lambdas by ARN.
+    - ``workflow``: Tishneet's durable WorkflowBackendOps (the agreed deployed
+      path). Lazy-imported so this module still works standalone; it only
+      resolves when the merged backend (backend/workflows + gateway) is present
+      in the deployment package.
+    """
     global _SINGLETON
     if _SINGLETON is None:
         mode = os.environ.get("SENTINEL_BACKEND", "local")
-        _SINGLETON = AwsBackendOps() if mode == "aws" else LocalBackendOps()
+        if mode == "workflow":
+            try:
+                from backend.workflows.api_adapter import WorkflowBackendOps
+            except ImportError:
+                from workflows.api_adapter import WorkflowBackendOps
+            _SINGLETON = WorkflowBackendOps()
+        elif mode in ("local", "aws"):
+            _SINGLETON = AwsBackendOps() if mode == "aws" else LocalBackendOps()
+        else:
+            raise ValueError("SENTINEL_BACKEND must be local, aws, or workflow")
     return _SINGLETON

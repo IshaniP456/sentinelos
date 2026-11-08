@@ -23,6 +23,7 @@ holds a credential that grants admin authority. The two supported modes:
   browser sends a cookie, not a header). MUST NOT be used in any deployment.
 """
 
+import json
 import os
 
 try:  # package (local) vs flat (deployed Lambda)
@@ -67,11 +68,31 @@ def require_admin(event):
         return os.environ.get("SENTINEL_ADMIN_ID", "admin-local")
 
     # prod: trust only claims the API Gateway authorizer established.
+    # (Hardening reconciled from Tishneet's integration.patch — exact group
+    # membership, HTTP-API JWT claim shape, and a required verified identity.
+    # This identity is what AwsBackendOps signs into Mariam's admin assertion,
+    # so it MUST be a real non-empty string, never a literal fallback.)
     ctx = (event.get("requestContext") or {}).get("authorizer") or {}
-    claims = ctx.get("claims") or ctx  # REST (claims) vs HTTP API (flat) shapes
-    groups = str(claims.get("cognito:groups", "")) + "," + str(claims.get("groups", ""))
+    # REST (claims), HTTP API (jwt.claims), or Lambda-authorizer (lambda) shapes.
+    claims = (ctx.get("jwt") or {}).get("claims") or ctx.get("claims") or ctx.get("lambda") or ctx
+
+    groups = set()
+    for key in ("cognito:groups", "groups"):
+        value = claims.get(key, [])
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except (ValueError, TypeError):
+                parsed = value.replace(" ", ",").split(",")
+            value = parsed if isinstance(parsed, list) else [parsed]
+        if isinstance(value, list):
+            groups.update(g.strip().lower() for g in value if isinstance(g, str))
+
     role = claims.get("role") or claims.get("custom:role")
-    is_admin = "admin" in groups.lower() or role == "admin"
-    if not is_admin:
+    if "admin" not in groups and role != "admin":
         raise ApiError("FORBIDDEN", "Administrator authorization required.")
-    return claims.get("email") or claims.get("sub") or "admin"
+
+    identity = claims.get("email") or claims.get("sub")
+    if not isinstance(identity, str) or not identity.strip():
+        raise ApiError("FORBIDDEN", "Verified administrator identity required.")
+    return identity
