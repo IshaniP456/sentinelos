@@ -65,21 +65,25 @@ evaluates one call at a time. SentinelOS checks the whole plan against live stat
 In the deployed templates, only `sentinel-data-execute` (update) and
 `sentinel-data-reset` (put) may write `sentinel_warehouse`. The workflow and
 Bedrock role can write only its own workflow table. To get AWS's own answer,
-run this in the workshop terminal. Expect `implicitDeny` on every row:
+run this in the workshop terminal. It checks every role in the workflow and API stacks. Expect `implicitDeny` on every row:
 
 ```
-ROLE=$(aws cloudformation describe-stack-resources --stack-name sentinel-workflow-tishneet \
-  --query "StackResources[?ResourceType=='AWS::IAM::Role'].PhysicalResourceId" --output text | head -1)
-aws iam simulate-principal-policy \
-  --policy-source-arn arn:aws:iam::737876441172:role/$ROLE \
-  --action-names dynamodb:PutItem dynamodb:UpdateItem dynamodb:DeleteItem \
-  --resource-arns arn:aws:dynamodb:us-east-1:737876441172:table/sentinel_warehouse \
-  --query "EvaluationResults[].[EvalActionName,EvalDecision]" --output table
+for STACK in sentinel-workflow-tishneet sentinelos-api; do
+  for ROLE in $(aws cloudformation describe-stack-resources --stack-name $STACK \
+      --query "StackResources[?ResourceType=='AWS::IAM::Role'].PhysicalResourceId" --output text); do
+    echo "== $ROLE"
+    aws iam simulate-principal-policy \
+      --policy-source-arn arn:aws:iam::737876441172:role/$ROLE \
+      --action-names dynamodb:PutItem dynamodb:UpdateItem dynamodb:DeleteItem \
+      --resource-arns arn:aws:dynamodb:us-east-1:737876441172:table/sentinel_warehouse \
+      --query "EvaluationResults[].[EvalActionName,EvalDecision]" --output table
+  done
+done
 ```
 
 ## 4. Latency
 
-Local stages (in-process, 2000 calls each):
+Local stages (in-process on a laptop, 2000 calls each):
 
 | Stage | Calls | Median ms | p95 ms | Max ms |
 |---|---|---|---|---|
@@ -87,8 +91,18 @@ Local stages (in-process, 2000 calls each):
 | Simulate plan (in-process) | 2000 | 0.003 | 0.003 | 0.030 |
 | Local policy check (in-process) | 2000 | 0.001 | 0.001 | 0.011 |
 
-Deployed round trips, from the workshop terminal. These are read-only.
-`--include-execute` adds a probe plan that runs every executor check and is
+Deployed round trips, measured Nov 8 2026 from the workshop instance in us-east-1
+(20 calls each after 2 warm-up calls; network time included):
+
+| Stage | Calls | Median ms | p95 ms | Max ms |
+|---|---|---|---|---|
+| Read warehouse (Lambda round trip) | 20 | 39.9 | 40.4 | 1088.6 |
+| Policy check via Verified Permissions (Lambda round trip) | 20 | 69.1 | 106.4 | 1876.4 |
+
+The maximums are Lambda cold starts. For scale, a human approval takes minutes.
+
+To rerun them from the workshop terminal, use the commands below. The first is read-only.
+The second adds `--include-execute`, which times a probe plan that runs every executor check and is
 refused at simulation, so it commits nothing. Run it when nobody is mid-demo.
 
 ```
