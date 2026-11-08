@@ -6,7 +6,6 @@ workflow, Verified Permissions or production inventory integration.
 """
 import argparse
 import copy
-import getpass
 from datetime import datetime, timezone
 import json
 import os
@@ -16,6 +15,7 @@ from backend.ai.intent import check_intent, parse_instruction
 from backend.ai.planner import Planner
 from backend.ai.providers import provider_from_env
 from backend.ai.validation import validate_plan
+from scripts.secret_input import read_hidden_key
 
 MODEL = "amazon.nova-pro-v1:0"
 WAREHOUSE = {"warehouse_id": "demo-warehouse", "version": 1,
@@ -82,7 +82,11 @@ def main(argv=None):
         if not sys.stdin.isatty():
             print("Key entry requires an interactive terminal.", file=sys.stderr)
             return 1
-        key = getpass.getpass("Bedrock API key (hidden): ").strip()
+        try:
+            key = read_hidden_key()
+        except (KeyboardInterrupt, EOFError, ValueError, OSError):
+            print("Key entry cancelled; no request sent.", file=sys.stderr)
+            return 1
         if not key:
             print("No key entered; no request sent.", file=sys.stderr)
             return 1
@@ -100,6 +104,7 @@ def main(argv=None):
     os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
     if "amazon.nova-pro-v1:0" in os.environ["BEDROCK_MODEL_ID"]:
         os.environ.setdefault("BEDROCK_FORCE_TOOL", "true")
+    print("Running Bedrock generation and replanning checks; this may take up to two minutes.", file=sys.stderr, flush=True)
     try:
         report = run_checks(provider_from_env())
     except Exception:

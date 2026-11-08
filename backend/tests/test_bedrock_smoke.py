@@ -47,7 +47,7 @@ def test_probe_rejects_capacity_restriction_or_intent_failure(destination, count
 
 def test_private_key_prompt_runs_probe_without_printing_key(monkeypatch, capsys):
     monkeypatch.setattr(bedrock_smoke.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(bedrock_smoke.getpass, "getpass", lambda prompt: "private-test-token")
+    monkeypatch.setattr(bedrock_smoke, "read_hidden_key", lambda: "private-test-token")
     monkeypatch.setenv("AWS_BEARER_TOKEN_BEDROCK", "previous-token")
     monkeypatch.setattr(bedrock_smoke, "provider_from_env", lambda: ModelDouble())
     assert bedrock_smoke.main(["--prompt-key", "--region", "us-east-1"]) == 0
@@ -91,3 +91,54 @@ def test_deployment_identity_gate_reports_account_without_claiming_permissions()
 def test_deployment_identity_gate_stops_for_wrong_account_or_region(account, region):
     with pytest.raises(ValueError):
         check_identity(identity_session(account, region))
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_real_terminal_accepts_long_key_without_echo_and_restores_settings(cancel):
+    import os
+    import pty
+    import select
+    import signal
+    import subprocess
+    import sys
+    import termios
+    import time
+    master, slave = pty.openpty()
+    previous = termios.tcgetattr(slave)
+    code = """
+from scripts.secret_input import read_hidden_key
+try:
+    key = read_hidden_key()
+    assert key == 'K' * 12000
+    print('ACCEPTED')
+except KeyboardInterrupt:
+    print('CANCELLED')
+"""
+    process = subprocess.Popen([sys.executable, "-c", code], stdin=slave,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        prompt = b""
+        deadline = time.monotonic() + 5
+        while b"(hidden): " not in prompt:
+            assert time.monotonic() < deadline, "Key prompt did not become ready"
+            if select.select([process.stderr], [], [], 0.1)[0]:
+                prompt += os.read(process.stderr.fileno(), 1024)
+        if cancel:
+            process.send_signal(signal.SIGINT)
+        else:
+            payload = b"K" * 12000 + b"\n"
+            while payload:
+                sent = os.write(master, payload)
+                payload = payload[sent:]
+        output, errors = process.communicate(timeout=5)
+        assert process.returncode == 0
+        assert output.strip() == (b"CANCELLED" if cancel else b"ACCEPTED")
+        assert b"KKKK" not in prompt + output + errors
+        assert not select.select([master], [], [], 0)[0], "Hidden input echoed to the terminal"
+        assert termios.tcgetattr(slave) == previous
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        os.close(master)
+        os.close(slave)

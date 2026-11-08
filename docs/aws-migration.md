@@ -85,6 +85,12 @@ target until the smoke passes. Key Region/access must match; if a permitted Nova
 inference profile is required, pass its exact ID with `--model-id` and rerun.
 Do not paste tokens in chat or pass them as command-line arguments.
 
+The hidden prompt reads without the terminal's canonical line limit, which can
+otherwise truncate long bearer tokens and trigger repeated terminal bells.
+Mac pseudo-terminal tests cover a 12,000-character dummy key, no echo and terminal
+restoration after success/cancellation. After entry, a progress message confirms
+the model checks are running; no actual token is printed.
+
 For deployment, configure the temporary access key, secret and session token
 using Workshop Studio's CLI credential instructions outside the repository, then:
 
