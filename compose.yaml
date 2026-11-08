@@ -12,7 +12,7 @@ x-workflow: &workflow
     SENTINEL_WORKFLOW_TABLE: sentinel_workflow
     DYNAMODB_ENDPOINT_URL: http://dynamodb:8000
     AWS_REGION: us-east-1
-    SENTINEL_APPROVAL_TIMEOUT: '600'
+    SENTINEL_APPROVAL_TIMEOUT: '1800'
   depends_on:
     - dynamodb
 services:

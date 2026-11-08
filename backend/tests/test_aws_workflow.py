@@ -217,7 +217,7 @@ class DefinitionTests(unittest.TestCase):
     def test_approval_has_callback_and_explicit_timeout(self):
         state = self.definition["States"]["WaitForApproval"]
         self.assertTrue(state["Resource"].endswith(".waitForTaskToken"))
-        self.assertEqual(state["TimeoutSeconds"], 600)
+        self.assertEqual(state["TimeoutSeconds"], 1800)
         self.assertEqual(state["Parameters"]["Payload"]["task_token.$"], "$$.Task.Token")
         self.assertEqual(state["Catch"][0]["Next"], "ExpireApproval")
 

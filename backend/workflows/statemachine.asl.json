@@ -42,7 +42,7 @@
       "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
       "Parameters": {"FunctionName": "${WorkflowFunctionArn}", "Payload": {"operation": "register_approval", "plan_id.$": "$.plan_id", "task_token.$": "$$.Task.Token"}},
       "ResultPath": "$.callback_result",
-      "TimeoutSeconds": 600,
+      "TimeoutSeconds": 1800,
       "Catch": [
         {"ErrorEquals": ["States.Timeout"], "ResultPath": "$.transport_error", "Next": "ExpireApproval"},
         {"ErrorEquals": ["States.ALL"], "ResultPath": "$.transport_error", "Next": "RecordFailure"}

@@ -68,7 +68,7 @@ Resources:
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           SENTINEL_WORKFLOW_TABLE: !Ref WorkflowTable
           SENTINEL_TRUSTED_ADAPTER_MODULE: !Ref TrustedAdapterModule
-          SENTINEL_APPROVAL_TIMEOUT: '600'
+          SENTINEL_APPROVAL_TIMEOUT: '1800'
       Policies:
         - Version: '2012-10-17'
           Statement:
