@@ -29,7 +29,7 @@ export default function ApprovalModal({ plan, onApprove, onDeny, busy }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="approval-title">
-      <div className="card w-full max-w-md">
+      <div className="card max-h-[90vh] w-full max-w-md overflow-y-auto">
         <div className="border-b border-ink-600 px-5 py-3">
           <h3 id="approval-title" className="text-sm font-bold uppercase tracking-wider text-status-amber">
             Human Approval Required

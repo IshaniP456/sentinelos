@@ -34,8 +34,8 @@ export default function AuditLog({ events }) {
                   {e.outcome}
                 </span>
               </div>
-              <div className="mt-1 text-xs text-slate-400">{e.message}</div>
-              <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-600">
+              <div className="mt-1 break-words text-xs text-slate-400">{e.message}</div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
                 <span className="font-mono">{formatTime(e.timestamp)}</span>
                 {e.plan_id !== '—' && <span>· {e.plan_id}</span>}
                 {e.revision > 0 && <span>· rev {e.revision}</span>}
