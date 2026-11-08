@@ -37,7 +37,19 @@ def main(argv=None):
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 1
-    except (BotoCoreError, ClientError):
+    except ClientError as error:
+        code = error.response.get("Error", {}).get("Code")
+        messages = {
+            "ExpiredToken": "AWS credentials have expired. Copy fresh temporary credentials from Workshop Studio.",
+            "ExpiredTokenException": "AWS credentials have expired. Copy fresh temporary credentials from Workshop Studio.",
+            "InvalidClientTokenId": "AWS rejected the credential identity. Copy all three fields from the same Workshop Studio session.",
+            "SignatureDoesNotMatch": "AWS rejected the credential signature. Recopy the access key, secret and session token together without quotes.",
+            "AccessDenied": "AWS refused the identity request. Check access with your workshop administrator.",
+            "AccessDeniedException": "AWS refused the identity request. Check access with your workshop administrator.",
+        }
+        print(messages.get(code, "AWS rejected the identity request. Check the workshop session and configured profile."), file=sys.stderr)
+        return 1
+    except BotoCoreError:
         print("AWS identity check failed. Check the profile, temporary session expiry, connectivity and STS access.", file=sys.stderr)
         return 1
     print(json.dumps(report, indent=2))

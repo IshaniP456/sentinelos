@@ -93,6 +93,22 @@ def test_deployment_identity_gate_stops_for_wrong_account_or_region(account, reg
         check_identity(identity_session(account, region))
 
 
+@pytest.mark.parametrize("code", ["ExpiredToken", "InvalidClientTokenId", "UNRECOGNIZED_PRIVATE_CODE"])
+def test_identity_failures_explain_next_step_without_raw_aws_details(monkeypatch, capsys, code):
+    from botocore.exceptions import ClientError
+    from scripts import aws_preflight
+    session = SimpleNamespace(get_credentials=lambda: object())
+    monkeypatch.setattr(aws_preflight.boto3, "Session", lambda **kwargs: session)
+    def refused(session):
+        raise ClientError({"Error": {"Code": code, "Message": "private-credential-detail"}}, "GetCallerIdentity")
+    monkeypatch.setattr(aws_preflight, "check_identity", refused)
+    assert aws_preflight.main([]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "private-credential-detail" not in output.err
+    assert code not in output.err
+
+
 @pytest.mark.parametrize("cancel", [False, True])
 def test_real_terminal_accepts_long_key_without_echo_and_restores_settings(cancel):
     import os
