@@ -3,6 +3,8 @@ from .errors import WorkflowError
 
 
 NO_COMMIT_ERRORS = {
+    "INVALID_REQUEST": "The executor rejected the request format; nothing was committed.",
+    "PLAN_VALIDATION_FAILED": "The executor rejected the plan structure; nothing was committed.",
     "VERSION_CONFLICT": "Warehouse changed; evaluate the plan again.",
     "RUN_MISMATCH": "Demo run changed; evaluate the plan again.",
     "AUTHORIZATION_DENIED": "The executor denied current authorization.",

@@ -1,63 +1,52 @@
 # Workflow integration readiness
 
-Author: Tishneet. Local checks recorded 2026-11-07; no live deployment claimed.
+Author: Tishneet. No workflow deployment claimed.
 
-## Checklist and execution order
+## Current checklist
 
-- [x] Implement Mariam's reset/revoke refusal classification and sanitized errors.
-- [x] Fetch published gateway a4b262f into a disposable integration tree; leave
-  teammate implementations out of Tishneet's contribution branch.
-- [x] Check fingerprint reuse, lazy signing and routine execution with real gateway
-  code and mocked AWS data handlers.
-- [ ] Mariam: align executor approval with `decision` envelope. Published executor
-  reads `status`, producing APPROVAL_INVALID. The integration regression is an
-  explicit expected failure until the owner fixes it; it is not acceptance.
-- [ ] Configure temporary Workshop Studio credentials locally, outside Git/chat.
-- [ ] Run `make bedrock-smoke`: two real Converse calls, zero inventory operations,
-  generation and replan validated independently. Target `amazon.nova-pro-v1:0`,
-  us-east-1; record the successful actual model ID or permitted inference profile.
-- [ ] Build the combined team artifact, inspect changeset/IAM, deploy workflow
-  stack and record StateMachineArn plus WorkflowTableName.
-- [ ] Hand outputs to Ishani and Mariam, then verify live submit/replan/approve/
-  execute, denial, reset, expiry and replay. Fixtures never substitute for Bedrock.
+- [x] Reset/revoke refusal handling and durable reset fences implemented.
+- [x] Mariam gateway 756401f available in the disposable integration tree.
+- [x] Approval-envelope fix e4fa706 available in her branch; remove the old expected
+  failure and require approval-to-execution to pass the combined test suite.
+- [x] Workflow IAM updated for six gateway callees, including sentinel-security-authorize.
+- [x] INVALID_REQUEST and PLAN_VALIDATION_FAILED preserved as guaranteed no-commit
+  errors, with sanitized messages and boolean retry flags.
+- [x] Real Nova Pro generation and replanning smoke passed in Tishneet's terminal.
+  Evidence: examples/bedrock-smoke.nova-pro.json; provided by Tishneet in chat.
+- [ ] Configure AWS deployment profile and verify account737876441172/us-east-1.
+- [ ] Verify deployment-role model access; bearer-key success does not prove it.
+- [ ] Build combined artifact, inspect IAM/changeset and deploy workflow stack.
+- [ ] Hand StateMachineArn, WorkflowTableName and WorkflowTableArn to Ishani;
+  send StateMachineArn to Mariam for the reset guard.
+- [ ] Complete three live reset/demo cycles plus denial, expiry, revocation and replay.
 
-AWS credentials were not configured at this check. No stack ARN/table output or
-successful live Nova result exists. The model name above is a target, not evidence
-of account access. If it needs an inference profile, validate that profile before
-choosing its exact IAM resources.
+The successful model is amazon.nova-pro-v1:0 in us-east-1. The two supplied
+snapshots are scripted; the model outputs are live. Generation latency was
+1012.241ms; replanning latency697.707ms. Usage totals were747 and886 tokens.
+These two calls do not establish a latency percentile, deployment-role access,
+real warehouse integration or a deployed Step Functions workflow.
 
-## Local evidence
+No AWS deployment credentials were available at the latest local check. No real
+workflow stack outputs exist. Mariam reports Phase4 deployed with Verified
+Permissions; the assistant has not independently verified her live deployment.
 
-The disposable tree `/tmp/sentinelos-backend-integration` combines Tishneet's
-working files, Ishani's previously pinned API e4ef0cf and Mariam's published
-core/data/security a4b262f. It is not a team integration branch or a deployment.
-The API snapshot is older than Ishani's live API, so these tests do not verify her
-latest deployed API. Model responses are fixtures in this suite; AWS handlers
-use moto. Standalone backend tests use DynamoDB Local.
+## Local integration boundaries
 
-Recorded results: 73 standalone backend tests passed before the IAM reduction;
-the final combined run passed 250 tests with one explicit expected failure for
-the approval mismatch. That combined run includes the updated five-function IAM
-checks. SAM lint and Linux ARM64/Python3.12 build passed; the packaged team gateway
-imported and constructed with boto3.client blocked and no signing key loaded.
-These are local checks, not AWS deployments or live service tests.
+The disposable tree /tmp/sentinelos-backend-integration combines our current code,
+Ishani's previously pinned API e4ef0cf and Mariam's core/data/security756401f.
+Teammate implementations are not committed to Tishneet's contribution branch.
+This tree is not a team integration branch or deployment and uses an older API
+snapshot than Ishani's live API.
 
-`test_published_gateway.py` runs the actual workflow into Mariam's real gateway
-and data handlers. Routine execution changes (20,8,5,v1) to (17,8,8,v2).
-Replanning reaches approval revision2; the subsequent executor contract mismatch
-is deliberately reported as an expected failure and blocks live acceptance.
+The workflow test uses fixture model responses, actual gateway/data-handler code,
+moto storage, and explicitly selected LOCAL_POLICY within the mocked authorize
+handler. It exercises the new Lambda transport and exact approval envelope;
+it does not establish live Verified Permissions behavior. The model smoke is
+separate live evidence. Public status shape was validated by Ishani against her
+frontend. See ishani-workflow-deploy.md for the API runtime and permission contract.
 
-## Message to Ishani
-
-Thanks—the frontend validation closes the response-shape check. Confirmed
-`SENTINEL_TRUSTED_ADAPTER_MODULE=backend.security.gateway`; Mariam's module is now
-published at a4b262f. Our local integration found one blocker for her: the executor
-reads approval.status while the agreed outbound record uses decision. I've
-prepared the exact owner change and regression test.
-
-StateMachineArn and SENTINEL_WORKFLOW_TABLE are still pending deployment. Nova Pro
-is the agreed target, but live validation has not run; no fixture fallback will
-be enabled. I'll send actual stack outputs and the validated model/profile ID
-before your Backend=workflow redeploy. No changes to backend/api/ are included.
-
-These are drafts only; no external messages have been sent.
+Current combined suite:259 passed, zero expected failures; the exact approval
+envelope now reaches execution. Targeted host checks:64 passed. SAM lint,
+Linux ARM64/Python3.12 build and packaged gateway import/construction checks
+also passed with the latest gateway. No live workflow call was made.
+Historical evidence before Phase4:250 tests passed, one expected approval failure.

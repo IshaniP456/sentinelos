@@ -278,7 +278,7 @@ class GatewayContractTests(unittest.TestCase):
         self.assertEqual(self.make_service().reconcile_reset(reset_id, "verified-admin"), SEED)
         self.assertEqual(len(self.gateway.reset_calls), 1)
 
-    def test_workflow_iam_has_only_own_table_and_five_nonadmin_callees(self):
+    def test_workflow_iam_has_only_own_table_and_six_nonadmin_callees(self):
         class TemplateLoader(yaml.SafeLoader):
             pass
         def tagged(loader, tag, node):
@@ -297,10 +297,10 @@ class GatewayContractTests(unittest.TestCase):
                 self.assertEqual(statement["Resource"], {"GetAtt": "WorkflowTable.Arn"})
         parameter = template["Parameters"]["TrustedFunctionArns"]
         arns = parameter["Default"].split(",")
-        self.assertEqual(len(set(arns)), 5)
+        self.assertEqual(len(set(arns)), 6)
         self.assertEqual({a.rsplit(":", 1)[1] for a in arns}, {
             "sentinel-data-warehouse", "sentinel-data-agent", "sentinel-data-runid",
-            "sentinel-data-execute", "sentinel-data-audit-append"})
+            "sentinel-data-execute", "sentinel-data-audit-append", "sentinel-security-authorize"})
         for arn in arns:
             self.assertRegex(arn, parameter["AllowedPattern"])
         for name in ("sentinel-data-revoke", "sentinel-data-reset"):

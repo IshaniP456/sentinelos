@@ -35,7 +35,7 @@ These checks do **not** constitute AWS service validation or deployment.
    set `SENTINEL_TRUSTED_ADAPTER_MODULE=backend.security.gateway`.
    Missing adapters must fail closed. Mariam's gateway wraps her privileged
    Lambdas; the workflow does not access her inventory/agent/audit tables or
-   signing key. The template now restricts invocation to her five published gateway functions
+   signing key. The template now restricts invocation to her six published gateway functions
    in account737876441172/us-east-1. Revoke/reset are API-role operations only.
 3. Finish Ishani's authenticated API connection. Approvals, revocation and reset
    must receive a backend-established administrator identity. Never deploy open

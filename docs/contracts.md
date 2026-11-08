@@ -85,7 +85,8 @@ failure, empty/malformed acknowledgment, or generic dependency error is
 responses may use `{"executed":false,"no_commit":true}`.
 
 Agreed no-commit codes are VERSION_CONFLICT, RUN_MISMATCH, AUTHORIZATION_DENIED,
-SIMULATION_FAILED, APPROVAL_REQUIRED, APPROVAL_INVALID. The workflow preserves
+SIMULATION_FAILED, APPROVAL_REQUIRED, APPROVAL_INVALID, INVALID_REQUEST and
+PLAN_VALIDATION_FAILED. The workflow preserves
 these codes and their boolean retry flags; operator messages are sanitized.
 AUTHORIZATION_DENIED is REJECTED; other guaranteed rejections are FAILED. A bare
 error, timeout or malformed acknowledgement remains unconfirmed and replays the
@@ -93,7 +94,7 @@ same (plan_id, revision), as before.
 
 The production adapter module is `backend.security.gateway` (owned by Mariam).
 It wraps her Lambdas and imports `backend.core.simulator` in-process. Workflow
-IAM invokes only warehouse, agent, runid, execute, audit-append in
+IAM invokes only warehouse, agent, runid, execute, audit-append, authorize in
 account737876441172/us-east-1. It has no inventory-table, admin-Lambda, signing-key
 or secrets permissions. The API role separately signs revoke/reset assertions;
 loading or constructing the gateway in the workflow must not load that secret.
@@ -119,10 +120,11 @@ and persists a refusal marker. Refusal codes retain their HTTP status and boolea
 retry flag; raw messages are never exposed. A later read failure cannot undo a
 successful reset or clear its fence. Unknown outcomes stay fenced.
 
-Published gateway a4b262f uses labeled LOCAL_POLICY authorization in-process;
-Verified Permissions is not active. Its executor currently reads approval.status,
-which conflicts with the agreed outbound approval.decision envelope. Elevated
-execution is blocked until Mariam aligns her executor (see integration-readiness.md).
+Published gateway756401f invokes sentinel-security-authorize, which Mariam
+reports deployed with Verified Permissions. The workflow role needs no direct
+Verified Permissions access. Executor fix e4fa706 now checks the agreed
+approval.decision/decided_at/plan_id bindings. See integration-readiness.md for
+separate local integration and live evidence.
 
 ## Durable storage and audit
 

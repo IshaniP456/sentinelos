@@ -371,7 +371,7 @@ class TemplateTests(unittest.TestCase):
             self.assertIn(key, parameters)
             self.assertNotIn("Default", parameters[key])
         self.assertEqual(parameters["TrustedAdapterModule"]["Default"], "backend.security.gateway")
-        self.assertEqual(len(parameters["TrustedFunctionArns"]["Default"].split(",")), 5)
+        self.assertEqual(len(parameters["TrustedFunctionArns"]["Default"].split(",")), 6)
 
 
 if __name__ == "__main__":

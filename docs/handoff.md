@@ -41,13 +41,14 @@ Mariam contract alignment is implemented in the backend: admin-aware remote
 reset with durable CONTROL fencing, trusted reset reconciliation, canonical
 outbound executor approval fields, and preservation of guaranteed no-commit error
 codes. Internal/public approval shape is unchanged. The IAM template limits the
-workflow to her five published gateway Lambda callees and its own workflow table.
+workflow to her six published gateway Lambda callees and its own workflow table.
 
 For Ishani, the actual local fixture-backed GET response is committed under
 `docs/examples/plan-status.fixture.completed.json`. The ready-to-send message for
 Mariam is `docs/mariam-gateway-handoff.md`. No external message was sent and no
 teammate-owned source was edited. StateMachineArn, physical workflow-table name
-and successful live Nova Pro validation remain pending; no deployed values exist.
+remain pending; no deployed workflow values exist. Live Nova Pro smoke has passed;
+see docs/examples/bedrock-smoke.nova-pro.json (user-provided terminal output).
 
 Planning, validation, bounded candidates, risk, approvals, durable progress,
 execution reconciliation, and audit retry logic remain unchanged. Contribution

@@ -1,35 +1,21 @@
-# Message to Mariam — published gateway integration
+# Message to Mariam — Phase4 integration update
 
-Author: Tishneet. Draft only; not sent externally.
+Author: Tishneet. Draft only; the assistant has not sent this message.
 
-Hi Mariam — I fetched your published gateway at a4b262f and tested it in a
-disposable integration tree. Root import, lazy signing-key construction, routine
-workflow execution and guaranteed reset refusal pass locally. My CONTROL fence
-now clears only for an agreed exact no_commit=True reset refusal. Unknown
-outcomes remain fenced and reconcile without repeating reset.
+Hi Mariam — I fetched756401f, including approval fix e4fa706. My workflow IAM
+now includes sentinel-security-authorize alongside the five data functions, with
+no inventory-table, admin-function, signing-secret or direct Verified Permissions
+permissions. INVALID_REQUEST and PLAN_VALIDATION_FAILED are now preserved as
+sanitized guaranteed no-commit errors, including the boolean retry flag.
 
-One blocker needs your change in backend/data/executor.py::_check_approval:
-our agreed outbound envelope is:
+The combined local suite now passes259 tests with no expected approval failure.
+The real workflow calls your published gateway/data handlers against moto;
+this test explicitly selects LOCAL_POLICY inside the mocked authorize handler,
+so it is not a claim that I independently verified your live Cedar deployment.
+The exact decision/decided_at/plan_id approval envelope now reaches execution.
 
-```text
-approval_id, plan_id, revision, fingerprint, warehouse_version,
-run_id, decision, admin, decided_at
-```
-
-Your gateway correctly forwards it unchanged, but the published executor checks
-approval.status, so approved elevated plans return APPROVAL_INVALID. Please
-check decision == APPROVED, match plan_id to the execute request as well as
-revision/fingerprint/warehouse_version/run_id, and require the verified admin and
-decision timestamp. Keep idempotent replay of an already committed revision
-returning its original result. Please add tests using this exact envelope,
-including denied decision, wrong plan ID and missing identity/timestamp.
-
-Fingerprint reuse matches backend.ai.validation.fingerprint. Workflow IAM now
-invokes only the five functions your gateway uses: sentinel-data-{warehouse,
-agent,runid,execute,audit-append}. No inventory-table, admin-function or signing-key
-permissions. LOCAL_POLICY remains visible; I am not claiming Verified Permissions
-is enabled.
-
-StateMachineArn is still pending AWS credentials and deployment. I will send the
-actual output for your reset Lambda's STATE_MACHINE_ARN; no resource is deployed
-yet. You do not need to push the gateway again—it is now available on your branch.
+Tishneet's live Bedrock smoke passed with amazon.nova-pro-v1:0 in us-east-1:
+two real calls, generation and replanning checks passed, zero inventory writes.
+Deployment credentials and the workflow stack are still pending. I will send the
+actual StateMachineArn when deployed, and coordinate your reset-guard redeploy
+before the joint reset/demo run.

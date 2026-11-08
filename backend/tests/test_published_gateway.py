@@ -33,9 +33,13 @@ def integrated(monkeypatch):
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    # Exercise the new authorize Lambda transport, with local policy explicitly
+    # selected inside the mocked handler. This does not prove live Cedar access.
+    monkeypatch.setenv("SENTINEL_AUTHZ_ENGINE", "LOCAL_POLICY")
     routes = {"warehouse": lambdas.warehouse_handler, "agent": lambdas.agent_handler,
               "runid": lambdas.runid_handler, "execute": lambdas.execute_handler,
-              "audit_append": lambdas.audit_append_handler, "reset": lambdas.reset_handler}
+              "audit_append": lambdas.audit_append_handler, "reset": lambdas.reset_handler,
+              "authorize": lambdas.authorize_handler}
     with mock_aws():
         lambdas.reset_clients()
         for definition in table_definitions():
@@ -65,9 +69,6 @@ def test_published_gateway_replan_approval_and_atomic_execution(integrated):
     assert plan_fingerprint(plan) == fingerprint(plan)
     service.record_approval(pending["approval"]["approval_id"], "APPROVED", "verified-admin")
     result = drive(service, second)
-    if (result["status"] == "FAILED"
-            and (result.get("error") or {}).get("code") == "APPROVAL_INVALID"):
-        pytest.xfail("Mariam a4b262f executor reads status; agreed envelope supplies decision. Owner fix required.")
     assert result["status"] == "COMPLETED"
     warehouse = gateway.get_warehouse()
     assert warehouse["version"] == 3

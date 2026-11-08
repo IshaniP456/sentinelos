@@ -24,9 +24,9 @@ Parameters:
     Description: Packaged trusted adapter factory module agreed with Mariam.
   TrustedFunctionArns:
     Type: CommaDelimitedList
-    AllowedPattern: '^arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-(warehouse|agent|runid|execute|audit-append)$'
-    Default: 'arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-warehouse,arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-agent,arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-runid,arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-execute,arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-audit-append'
-    Description: Mariam's five read/execute/audit Lambdas only; no admin functions.
+    AllowedPattern: '^arn:aws:lambda:us-east-1:737876441172:function:(sentinel-data-(warehouse|agent|runid|execute|audit-append)|sentinel-security-authorize)$'
+    Default: 'arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-warehouse,arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-agent,arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-runid,arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-execute,arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-audit-append,arn:aws:lambda:us-east-1:737876441172:function:sentinel-security-authorize'
+    Description: Mariam's six read/authorize/execute/audit Lambdas only; no admin functions.
 
 Resources:
   WorkflowTable:
@@ -109,3 +109,5 @@ Outputs:
     Description: Configure on the trusted API wrapper; not on the workflow Lambda.
   WorkflowTableName:
     Value: !Ref WorkflowTable
+  WorkflowTableArn:
+    Value: !GetAtt WorkflowTable.Arn
