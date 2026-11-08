@@ -113,6 +113,11 @@ class BedrockProvider:
         self.schema = json.loads(Path(__file__).with_name("plan.schema.json").read_text())
         self.tool_schema = converse_tool_schema(self.schema)
 
+    def generate_image(self, image, warehouse):
+        from .image_provider import generate_image
+        result, self.metrics = generate_image(self.client, self.model_id, image, warehouse, self.force_tool)
+        return result
+
     def generate(self, instruction, warehouse, failed_plan=None, simulation_result=None, attempt=1):
         start = time.monotonic()
         intent = parse_instruction(instruction)

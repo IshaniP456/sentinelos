@@ -18,6 +18,9 @@ class Planner:
         parse_instruction(instruction)
         return copy.deepcopy(self.provider.generate(instruction, copy.deepcopy(warehouse), attempt=1))
 
+    def generate_image_plan(self, image, warehouse):
+        return copy.deepcopy(self.provider.generate_image(copy.deepcopy(image), copy.deepcopy(warehouse)))
+
     def replan(self, instruction, failed_plan, simulation_result, warehouse, attempt):
         intent = parse_instruction(instruction)
         if type(attempt) is not int or not 2 <= attempt <= 3:

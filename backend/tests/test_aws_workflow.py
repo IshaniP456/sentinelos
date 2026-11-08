@@ -27,6 +27,10 @@ class FakeService:
     def get_plan_status(self, plan_id):
         return {"plan_id": plan_id, "status": self.status}
 
+    def start_image_plan(self, image_b64, mime_type, demo_mode=None):
+        self.calls.append(("image", image_b64, mime_type, demo_mode))
+        return {"plan_id": "plan-123", "status": "PLANNING"}
+
     def tick(self, **kwargs):
         self.calls.append(("tick", kwargs))
         self.status = "VALIDATING"
@@ -68,6 +72,15 @@ class RejectedStart(Exception):
 
 
 class AwsDispatchTests(unittest.TestCase):
+    def test_image_start_keeps_bytes_out_of_state_machine_input(self):
+        client = FakeClient()
+        service = FakeService()
+        backend = AwsWorkflowBackend(service, "arn:example:machine", client)
+        result = backend.start_image_plan("encoded-image", "image/png", "image_injection_v1")
+        self.assertEqual(result["plan_id"], "plan-123")
+        self.assertEqual(json.loads(client.calls[0]["input"]), {"plan_id": "plan-123"})
+        self.assertEqual(service.calls, [("image", "encoded-image", "image/png", "image_injection_v1")])
+
     def test_sam_source_is_repository_and_architecture_matches_build(self):
         template = Path(__file__).parents[1] / "workflows" / "template.yaml"
         text = template.read_text()

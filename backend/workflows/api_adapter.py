@@ -35,9 +35,15 @@ class WorkflowBackendOps:
             raise _api_error(converted) from exc
 
     def start_plan(self, instruction):
+        return self._start(self.starter.start_plan, instruction)
+
+    def start_image_plan(self, image_b64, mime_type, demo_mode=None):
+        return self._start(self.starter.start_image_plan, image_b64, mime_type, demo_mode)
+
+    def _start(self, operation, *args):
         from .aws import WorkflowStartError
         try:
-            return self._call(self.starter.start_plan, instruction)
+            return self._call(operation, *args)
         except WorkflowStartError as exc:
             if exc.ambiguous:
                 # Preserve the ID for polling/reconciliation. A generic retryable

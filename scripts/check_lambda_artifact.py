@@ -11,6 +11,7 @@ def main():
         assert not (artifact / name).exists(), "Unexpected development content: " + name
     assert not (artifact / "backend" / "tests").exists()
     assert (artifact / "backend" / "ai" / "plan.schema.json").is_file()
+    assert (artifact / "backend" / "ai" / "assets" / "image-injection-v1.png").is_file()
     env = dict(os.environ, PYTHONPATH=str(artifact))
     subprocess.check_call([sys.executable, "-c",
                            "import backend.workflows.aws, backend.ai.providers, backend.workflows.service; "

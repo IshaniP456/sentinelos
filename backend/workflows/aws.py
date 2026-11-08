@@ -75,6 +75,11 @@ class AwsWorkflowBackend:
         self.start_existing(result["plan_id"])
         return result
 
+    def start_image_plan(self, image_b64, mime_type, demo_mode=None):
+        result = self.service.start_image_plan(image_b64, mime_type, demo_mode)
+        self.start_existing(result["plan_id"])
+        return result
+
     def start_existing(self, plan_id):
         """Reconcile/retry an uncertain start without another candidate or plan."""
         # UUID-based service plan IDs satisfy the Standard execution name rules.

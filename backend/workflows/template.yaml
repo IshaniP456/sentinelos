@@ -5,6 +5,11 @@ Transform: AWS::Serverless-2016-10-31
 Description: SentinelOS AI/workflow resources; real trusted adapters required.
 
 Parameters:
+  ImageDemoEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable the explicitly labeled exact-image scripted stage preset.
   BedrockModelId:
     Type: String
     MinLength: 1
@@ -69,6 +74,7 @@ Resources:
           SENTINEL_WORKFLOW_TABLE: !Ref WorkflowTable
           SENTINEL_TRUSTED_ADAPTER_MODULE: !Ref TrustedAdapterModule
           SENTINEL_APPROVAL_TIMEOUT: '600'
+          SENTINEL_IMAGE_DEMO_ENABLED: !Ref ImageDemoEnabled
       Policies:
         - Version: '2012-10-17'
           Statement:

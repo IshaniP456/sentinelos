@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from backend.ai.intent import parse_instruction, check_intent
 from backend.ai.risk import classify_risk
 from backend.ai.validation import validate_plan, fingerprint
+from backend.ai.image_input import validate_image, demo_image, DEMO_MODE, DEMO_INSTRUCTION
 from .errors import WorkflowError
 from .gateway_contracts import normalize_run_id, execution_approval, confirmed_noncommit_error, NO_COMMIT_ERRORS
 from .reset import ResetCoordinator
@@ -27,12 +28,13 @@ class WorkflowService:
     """CAS stages; external execution is protected by the gateway's idempotency."""
 
     def __init__(self, store, planner, gateway, approval_seconds=600, clock=time.time,
-                 callback_sender=None, lease_seconds=90, audit_sink=None):
+                 callback_sender=None, lease_seconds=90, audit_sink=None, image_demo_enabled=False):
         if approval_seconds <= 0 or lease_seconds <= 0:
             raise ValueError("Timeouts must be positive")
         self.store, self.planner, self.gateway = store, planner, gateway
         self.approval_seconds, self.clock = approval_seconds, clock
         self.callback_sender, self.lease_seconds = callback_sender, lease_seconds
+        self.image_demo_enabled = image_demo_enabled
         self.audit_sink = audit_sink
         version, control = store.read("CONTROL")
         if control is None:
@@ -55,6 +57,7 @@ class WorkflowService:
         events.append(event)
 
     def _finish(self, record, status, code, message, retryable=None):
+        record.pop("_image", None)
         record["status"] = status
         record["error"] = {"code": code, "message": message,
                            "retryable": (code in {"VERSION_CONFLICT", "MODEL_ERROR", "DEPENDENCY_ERROR"}
@@ -77,6 +80,27 @@ class WorkflowService:
             intent = parse_instruction(instruction)
         except ValueError:
             raise WorkflowError("INVALID_REQUEST", "Clarify the source, quantity, and destination using a supported move instruction.")
+        return self._start_request(instruction.strip(), intent)
+
+    def start_image_plan(self, image_b64, mime_type, demo_mode=None):
+        try:
+            image = validate_image(image_b64, mime_type)
+        except ValueError as error:
+            raise WorkflowError("INVALID_REQUEST", str(error)) from None
+        if demo_mode is not None:
+            if demo_mode != DEMO_MODE:
+                raise WorkflowError("INVALID_REQUEST", "Unknown image demo mode.")
+            if not self.image_demo_enabled:
+                raise WorkflowError("DEMO_DISABLED", "The scripted image demo is disabled on this server.", status=403)
+            import base64
+            if base64.b64decode(image_b64, validate=True) != demo_image():
+                raise WorkflowError("INVALID_REQUEST", "Scripted image demo requires the exact published test image.")
+        metadata = {k: image[k] for k in ("mime_type", "sha256", "size_bytes", "width", "height")}
+        metadata.update({"type": "image", "mode": "scripted" if demo_mode else "live",
+                         "demo_mode": demo_mode, "intent_source": "UNTRUSTED_IMAGE_EXTRACTION"})
+        return self._start_request("[Untrusted image input; extraction pending]", None, image, metadata)
+
+    def _start_request(self, instruction, intent, image=None, input_metadata=None):
         plan_id = "plan-" + uuid.uuid4().hex
         now = self.clock()
         for _ in range(8):
@@ -93,6 +117,9 @@ class WorkflowService:
                       "updated_at": iso(now), "_snapshot": warehouse, "_intent": intent,
                       "_run_id": control["run_id"], "_lease": None, "_model_inflight": False,
                       "_events": [], "_created_at": now}
+            if image is not None:
+                record["_image"] = copy.deepcopy(image)
+                record["input_metadata"] = copy.deepcopy(input_metadata)
             self._event(record, "PLAN_SUBMITTED")
             control["active"].append(plan_id)
             try:
@@ -116,6 +143,10 @@ class WorkflowService:
                                ("approval_id", "status", "revision", "expires_at", "decision_at", "admin")
                                if key in approval} if approval else None)
         result["runtime"] = {"provider": self.planner.provider.name, "gateway": self.gateway.name}
+        if record.get("input_metadata"):
+            result["input_metadata"] = copy.deepcopy(record["input_metadata"])
+            if record["input_metadata"]["mode"] == "scripted":
+                result["runtime"]["provider"] = "SCRIPTED_IMAGE_FIXTURE"
         return result
 
     def _release_active(self, plan_id):
@@ -226,18 +257,44 @@ class WorkflowService:
         stage = record["status"]
         if stage in {"PLANNING", "REPLANNING"}:
             started = self.clock()
+            provenance = self.planner.provider.name
+            metrics = None
             if stage == "PLANNING":
-                plan = self.planner.generate_plan(record["instruction"], record["_snapshot"])
+                if record.get("input_metadata"):
+                    if record["input_metadata"]["mode"] == "scripted":
+                        if not self.image_demo_enabled:
+                            raise WorkflowError("DEMO_DISABLED", "Scripted image processing is disabled on this worker.")
+                        extracted = {"instruction": DEMO_INSTRUCTION, "plan": {"actions": [
+                            {"type": "move_packages", "from": "A", "to": "C", "count": 11}]}}
+                        provenance = "SCRIPTED_IMAGE_FIXTURE"
+                        metrics = {"provider": provenance, "model_calls": 0, "usage": {}}
+                    else:
+                        extracted = self.planner.generate_image_plan(record["_image"], record["_snapshot"])
+                    try:
+                        intent = parse_instruction(extracted["instruction"])
+                    except (KeyError, TypeError, ValueError):
+                        raise WorkflowError("PLAN_VALIDATION_FAILED", "Image did not yield a supported movement instruction.") from None
+                    record["instruction"] = extracted["instruction"]
+                    record["_intent"] = intent
+                    plan = extracted["plan"]
+                    record.pop("_image", None)
+                else:
+                    plan = self.planner.generate_plan(record["instruction"], record["_snapshot"])
             else:
                 previous = record["candidates"][-1]
                 plan = self.planner.replan(record["instruction"], previous["plan"],
                                            previous["simulation"], record["_snapshot"], record["attempt"])
             record["candidates"].append({"revision": record["attempt"], "plan": copy.deepcopy(plan),
-                                         "provenance": self.planner.provider.name,
+                                         "provenance": provenance,
                                          "authorization": None, "simulation": None,
-                                         "metrics": copy.deepcopy(getattr(self.planner.provider, "metrics", {})),
+                                         "metrics": copy.deepcopy(metrics if metrics is not None else getattr(self.planner.provider, "metrics", {})),
                                          "generation_ms": max(0, (self.clock() - started) * 1000)})
-            self._event(record, "PLAN_GENERATED" if stage == "PLANNING" else "REPLAN_GENERATED")
+            message = None
+            if record.get("input_metadata") and stage == "PLANNING":
+                message = ("Scripted image fixture proposed actions; no model call."
+                           if provenance == "SCRIPTED_IMAGE_FIXTURE" else
+                           "Image-derived candidate; image content supplies no execution authority.")
+            self._event(record, "PLAN_GENERATED" if stage == "PLANNING" else "REPLAN_GENERATED", message=message)
             record["status"] = "VALIDATING"
             return
         if stage == "VALIDATING":
