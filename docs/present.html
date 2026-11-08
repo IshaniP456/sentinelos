@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SentinelOS — Presentation</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0a0a0c; color:#e7e5e4;
+    font-family: Inter, system-ui, -apple-system, sans-serif; line-height:1.55; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px 80px; }
+  .slide { background:#121013; border:1px solid #2c2a31; border-radius:20px;
+    padding: 36px 40px; margin: 0 0 24px; box-shadow: 0 20px 40px -24px #000;
+    scroll-margin-top: 20px; }
+  .slide h1 { font-size: 2.2rem; margin:.2em 0; color:#fff; }
+  .slide h2 { color:#f5b43c; font-size:1.1rem; text-transform:uppercase;
+    letter-spacing:.12em; margin:0 0 .4em; }
+  .slide h3 { color:#fff; font-size:1.5rem; margin:.2em 0; }
+  .slide table { width:100%; border-collapse:collapse; font-size:.92rem; margin:.5em 0; }
+  .slide th, .slide td { border:1px solid #2c2a31; padding:8px 10px; text-align:left; vertical-align:top; }
+  .slide th { background:#17161a; color:#f5b43c; }
+  .slide code, .slide pre { background:#0a0a0c; border:1px solid #2c2a31; border-radius:8px; }
+  .slide pre { padding:14px; overflow:auto; font-size:.8rem; }
+  .slide code { padding:1px 5px; font-size:.85em; }
+  .slide em { color:#a8a29e; }
+  .slide a { color:#6aa8ff; }
+  .num { position:absolute; }
+  .bar { position:sticky; top:0; z-index:5; background:#0a0a0ccc; backdrop-filter:blur(6px);
+    border-bottom:1px solid #2c2a31; padding:10px 20px; font-weight:700; color:#fff; }
+  .bar span { color:#f5b43c; }
+</style>
+</head>
+<body>
+  <div class="bar">Sentinel<span>OS</span> · Presentation <span id="count"></span></div>
+  <div class="wrap" id="deck">Loading…</div>
+<script>
+  fetch('./presentation.md').then(r => r.text()).then(md => {
+    // Strip the leading how-to comment block (before the first slide title).
+    const body = md.split(/\n---\n/);
+    // Drop the intro preamble chunk (everything before first "## 1")
+    const slides = body.filter(s => s.trim() && !/^#\s+SentinelOS — Presentation Deck/.test(s.trim().split('\n')[0]) || /^#\s+SentinelOS\s*$/.test(s.trim().split('\n')[0]));
+    const deck = document.getElementById('deck');
+    deck.innerHTML = '';
+    let n = 0;
+    body.forEach(chunk => {
+      const t = chunk.trim();
+      if (!t) return;
+      // skip the file-header/how-to preamble
+      if (t.startsWith('# SentinelOS — Presentation Deck')) return;
+      n++;
+      const div = document.createElement('div');
+      div.className = 'slide';
+      div.innerHTML = marked.parse(chunk);
+      deck.appendChild(div);
+    });
+    document.getElementById('count').textContent = '· ' + n + ' slides';
+  }).catch(e => { document.getElementById('deck').textContent = 'Could not load presentation.md: ' + e; });
+</script>
+</body>
+</html>
