@@ -72,5 +72,23 @@ Note: real Nova proposed the valid D2 split directly (1 candidate, no visible
 rejection) — expected per the PRD; the capacity-rejection visual uses the
 labeled preflight preset.
 
+## A6 — deployed site flipped to the real API (2026-11-08)
+- Rebuilt with `VITE_MOCK=false` + `VITE_API_BASE_URL=.../v1`; deployed to Amplify
+  (`main.d1awkbyla46117.amplifyapp.com`), bundle contains the execute-api host.
+- Zone add/edit/remove hidden (not mock). CORS preflight for plans / approvals /
+  revoke / reset all → **204**. Full D1 through the deployed path (Origin-stamped)
+  → COMPLETED A17/B8/C8 v2 (`plan-a8748e6def5741a08da485094e7d840d`), reset → seed.
+
+## A7 — three D1/D2/D3 runs through the deployed UI
+Backend + deployed-site network path are **verified** (A3–A5 by curl; A6
+Origin-stamped D1). The UI calls the exact same endpoints. **The three UI
+click-through runs are a human step** (this session has no browser) — steps in
+`docs/demo-script.md`. UI run results to be recorded here by the operator:
+| Run | D1 | D2 | D3 |
+|---|---|---|---|
+| 1 |  |  |  |
+| 2 |  |  |  |
+| 3 |  |  |  |
+
 ## Notes
 - Measured numbers + security posture: see the "Measured" section (added in B2).
