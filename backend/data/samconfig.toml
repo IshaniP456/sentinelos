@@ -1,0 +1,17 @@
+# SAM CLI settings for Mariam's data stack. Run from backend/data:
+#   sam build && sam deploy
+version = 0.1
+
+[default.global.parameters]
+stack_name = "sentinel-data"
+region = "us-east-1"
+
+[default.build.parameters]
+cached = false
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+resolve_s3 = true
+confirm_changeset = true
+fail_on_empty_changeset = false
+s3_prefix = "sentinel-data"

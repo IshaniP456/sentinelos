@@ -1,0 +1,464 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SentinelOS data stack (owner: Mariam). DynamoDB tables for warehouse, agents,
+  and audit, plus the five data Lambdas invoked by Ishani's API stack. Deploy
+  in us-east-1. Tables are retained if the stack is deleted.
+
+Parameters:
+  StateMachineArn:
+    Type: String
+    Default: ''
+    Description: >
+      Tishneet's planning state machine ARN. Reset checks it for RUNNING
+      executions. Leave empty until it exists; reset then refuses (fail closed).
+  ApiFunctionRoleArn:
+    Type: String
+    Default: ''
+    Description: >
+      IAM role ARN of Ishani's API Lambda. If set, it is allowed to read the
+      admin-assertion signing secret so the API can sign revoke/reset requests.
+  AgentId:
+    Type: String
+    Default: inventory-agent-01
+  WarehouseId:
+    Type: String
+    Default: demo-warehouse
+
+Conditions:
+  HasStateMachine: !Not [!Equals [!Ref StateMachineArn, '']]
+  HasApiRole: !Not [!Equals [!Ref ApiFunctionRoleArn, '']]
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    CodeUri: ../
+    Timeout: 10
+    MemorySize: 256
+    Environment:
+      Variables:
+        SENTINEL_WAREHOUSE_TABLE: !Ref WarehouseTable
+        SENTINEL_AGENTS_TABLE: !Ref AgentsTable
+        SENTINEL_AUDIT_TABLE: !Ref AuditTable
+        SENTINEL_EXECUTIONS_TABLE: !Ref ExecutionsTable
+        SENTINEL_AGENT_ID: !Ref AgentId
+        SENTINEL_WAREHOUSE_ID: !Ref WarehouseId
+
+Resources:
+  # ------------------------------------------------------------------ tables
+  WarehouseTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: sentinel_warehouse
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: warehouse_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: warehouse_id, KeyType: HASH}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+
+  AgentsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: sentinel_agents
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: agent_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: agent_id, KeyType: HASH}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+
+  AuditTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: sentinel_audit
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: plan_id, AttributeType: S}
+        - {AttributeName: event_id, AttributeType: S}
+        - {AttributeName: feed, AttributeType: S}
+        - {AttributeName: feed_at, AttributeType: S}
+      KeySchema:
+        - {AttributeName: plan_id, KeyType: HASH}
+        - {AttributeName: event_id, KeyType: RANGE}
+      GlobalSecondaryIndexes:
+        # Legacy index (sorted by event_id). Kept because DynamoDB allows only one
+        # index creation per update; nothing reads it.
+        - IndexName: recent_events
+          KeySchema:
+            - {AttributeName: feed, KeyType: HASH}
+            - {AttributeName: event_id, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+        # Time-ordered feed across all writers: feed_at = "<timestamp>#<event_id>".
+        - IndexName: recent_events_by_time
+          KeySchema:
+            - {AttributeName: feed, KeyType: HASH}
+            - {AttributeName: feed_at, KeyType: RANGE}
+          Projection: {ProjectionType: ALL}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+
+  ExecutionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: sentinel_executions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: execution_id, AttributeType: S}
+      KeySchema:
+        - {AttributeName: execution_id, KeyType: HASH}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+
+  # ------------------------------------------ Verified Permissions (Cedar)
+  # Single source of truth: backend/security/cedar/ (a test checks this copy matches).
+  PolicyStore:
+    Type: AWS::VerifiedPermissions::PolicyStore
+    Properties:
+      Description: SentinelOS inventory-agent authorization
+      ValidationSettings:
+        Mode: STRICT
+      Schema:
+        CedarJson: |
+          {
+            "Sentinel": {
+              "entityTypes": {
+                "Agent": {
+                  "shape": {
+                    "type": "Record",
+                    "attributes": {
+                      "status": {
+                        "type": "String"
+                      },
+                      "max_transfer": {
+                        "type": "Long"
+                      }
+                    }
+                  }
+                },
+                "Warehouse": {
+                  "shape": {
+                    "type": "Record",
+                    "attributes": {}
+                  }
+                }
+              },
+              "actions": {
+                "MovePackages": {
+                  "appliesTo": {
+                    "principalTypes": [
+                      "Agent"
+                    ],
+                    "resourceTypes": [
+                      "Warehouse"
+                    ],
+                    "context": {
+                      "type": "Record",
+                      "attributes": {
+                        "count": {
+                          "type": "Long"
+                        },
+                        "destination": {
+                          "type": "String"
+                        },
+                        "restricted_destination": {
+                          "type": "Boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+  AllowActiveWithinLimitPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !Ref PolicyStore
+      Definition:
+        Static:
+          Description: Active agent may move 1-10 packages per action (and within its max_transfer).
+          Statement: |
+            permit (
+              principal,
+              action == Sentinel::Action::"MovePackages",
+              resource
+            )
+            when {
+              principal.status == "ACTIVE" &&
+              context.count >= 1 &&
+              context.count <= 10 &&
+              context.count <= principal.max_transfer
+            };
+
+  ForbidRestrictedDestinationPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !Ref PolicyStore
+      Definition:
+        Static:
+          Description: Never move packages into HAZMAT or another restricted zone.
+          Statement: |
+            forbid (
+              principal,
+              action == Sentinel::Action::"MovePackages",
+              resource
+            )
+            when {
+              context.destination == "HAZMAT" || context.restricted_destination
+            };
+
+  ForbidInactiveAgentPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !Ref PolicyStore
+      Definition:
+        Static:
+          Description: Revoked or suspended agents may not move packages.
+          Statement: |
+            forbid (
+              principal,
+              action == Sentinel::Action::"MovePackages",
+              resource
+            )
+            unless {
+              principal.status == "ACTIVE"
+            };
+
+  AuthorizeFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: [AllowActiveWithinLimitPolicy, ForbidRestrictedDestinationPolicy, ForbidInactiveAgentPolicy]
+    Properties:
+      FunctionName: sentinel-security-authorize
+      Handler: data.lambdas.authorize_handler
+      Environment:
+        Variables:
+          SENTINEL_AUTHZ_ENGINE: VERIFIED_PERMISSIONS
+          SENTINEL_POLICY_STORE_ID: !Ref PolicyStore
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource:
+                - !GetAtt WarehouseTable.Arn
+                - !GetAtt AgentsTable.Arn
+            - Effect: Allow
+              Action:
+                - verifiedpermissions:IsAuthorized
+                - verifiedpermissions:BatchIsAuthorized
+              Resource: !GetAtt PolicyStore.Arn
+
+  # ------------------------------------------------- admin assertion secret
+  AdminAssertionSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: sentinel/admin-assertion-key
+      Description: HMAC key for signed admin assertions (revoke/reset). Generated by AWS; never in code.
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludePunctuation: true
+
+  AdminAssertionSecretPolicy:
+    Type: AWS::SecretsManager::ResourcePolicy
+    Condition: HasApiRole
+    Properties:
+      SecretId: !Ref AdminAssertionSecret
+      ResourcePolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {AWS: !Ref ApiFunctionRoleArn}
+            Action: secretsmanager:GetSecretValue
+            Resource: '*'
+
+  # ---------------------------------------------------------------- lambdas
+  WarehouseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sentinel-data-warehouse
+      Handler: data.lambdas.warehouse_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt WarehouseTable.Arn
+
+  AgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sentinel-data-agent
+      Handler: data.lambdas.agent_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt AgentsTable.Arn
+
+  AuditFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sentinel-data-audit
+      Handler: data.lambdas.audit_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource:
+                - !GetAtt AuditTable.Arn
+                - !Sub '${AuditTable.Arn}/index/recent_events_by_time'
+
+  RevokeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sentinel-data-revoke
+      Handler: data.lambdas.revoke_handler
+      Environment:
+        Variables:
+          ADMIN_SECRET_ARN: !Ref AdminAssertionSecret
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt AgentsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt AuditTable.Arn
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AdminAssertionSecret
+
+  ResetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sentinel-data-reset
+      Handler: data.lambdas.reset_handler
+      Environment:
+        Variables:
+          ADMIN_SECRET_ARN: !Ref AdminAssertionSecret
+          STATE_MACHINE_ARN: !Ref StateMachineArn
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource:
+                - !GetAtt WarehouseTable.Arn
+                - !GetAtt AgentsTable.Arn
+                - !GetAtt AuditTable.Arn
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AdminAssertionSecret
+            - !If
+              - HasStateMachine
+              - Effect: Allow
+                Action: states:ListExecutions
+                Resource: !Ref StateMachineArn
+              - !Ref AWS::NoValue
+
+  RunIdFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sentinel-data-runid
+      Handler: data.lambdas.runid_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt WarehouseTable.Arn
+
+  AuditAppendFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: sentinel-data-audit-append
+      Handler: data.lambdas.audit_append_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt AuditTable.Arn
+
+  ExecuteFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: [AllowActiveWithinLimitPolicy, ForbidRestrictedDestinationPolicy, ForbidInactiveAgentPolicy]
+    Properties:
+      FunctionName: sentinel-data-execute
+      Handler: data.lambdas.execute_handler
+      Timeout: 15
+      Environment:
+        Variables:
+          SENTINEL_AUTHZ_ENGINE: VERIFIED_PERMISSIONS
+          SENTINEL_POLICY_STORE_ID: !Ref PolicyStore
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - verifiedpermissions:IsAuthorized
+                - verifiedpermissions:BatchIsAuthorized
+              Resource: !GetAtt PolicyStore.Arn
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource:
+                - !GetAtt WarehouseTable.Arn
+                - !GetAtt AgentsTable.Arn
+                - !GetAtt ExecutionsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt WarehouseTable.Arn
+            - Effect: Allow
+              Action: dynamodb:ConditionCheckItem
+              Resource: !GetAtt AgentsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource:
+                - !GetAtt ExecutionsTable.Arn
+                - !GetAtt AuditTable.Arn
+
+Outputs:
+  WarehouseFnArn:
+    Description: Ishani's WarehouseFn parameter
+    Value: !GetAtt WarehouseFunction.Arn
+  AgentFnArn:
+    Description: Ishani's AgentFn parameter
+    Value: !GetAtt AgentFunction.Arn
+  AuditFnArn:
+    Description: Ishani's AuditFn parameter
+    Value: !GetAtt AuditFunction.Arn
+  RevokeFnArn:
+    Description: Ishani's RevokeFn parameter
+    Value: !GetAtt RevokeFunction.Arn
+  ResetFnArn:
+    Description: Ishani's ResetFn parameter
+    Value: !GetAtt ResetFunction.Arn
+  AuthorizeFnArn:
+    Description: Workflow gateway authorize_plan (Verified Permissions)
+    Value: !GetAtt AuthorizeFunction.Arn
+  PolicyStoreId:
+    Description: Verified Permissions policy store with the Cedar policies
+    Value: !Ref PolicyStore
+  RunIdFnArn:
+    Description: Workflow gateway get_run_id
+    Value: !GetAtt RunIdFunction.Arn
+  ExecuteFnArn:
+    Description: Workflow gateway execute_plan (workflow role only)
+    Value: !GetAtt ExecuteFunction.Arn
+  AuditAppendFnArn:
+    Description: Workflow gateway append_audit (idempotent)
+    Value: !GetAtt AuditAppendFunction.Arn
+  ExecutionsTableName:
+    Value: !Ref ExecutionsTable
+  WarehouseTableName:
+    Value: !Ref WarehouseTable
+  AgentsTableName:
+    Value: !Ref AgentsTable
+  AuditTableName:
+    Value: !Ref AuditTable
+  AdminAssertionSecretArn:
+    Description: Ishani's API reads this key to sign revoke/reset requests
+    Value: !Ref AdminAssertionSecret
