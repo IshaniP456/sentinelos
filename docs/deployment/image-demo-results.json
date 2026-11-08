@@ -1,0 +1,77 @@
+[
+  {
+    "mode": "live",
+    "plan_id": "plan-8933c69192624f7d92c9e2780f0e2dd0",
+    "status": "REJECTED",
+    "provider": "BEDROCK",
+    "attempted_actions": {
+      "actions": [
+        {
+          "count": 11,
+          "from": "A",
+          "to": "C",
+          "type": "move_packages"
+        }
+      ]
+    },
+    "authorization_engine": "VERIFIED_PERMISSIONS",
+    "reason_codes": [
+      "LIMIT_EXCEEDED"
+    ],
+    "warehouse_version_before": 1,
+    "warehouse_version_after": 1,
+    "warehouse_unchanged": true,
+    "execution": null,
+    "simulation": null,
+    "metrics": {
+      "input_modality": "image",
+      "latency_ms": 1176.658,
+      "provider": "BEDROCK",
+      "usage": {
+        "inputTokens": 1502,
+        "outputTokens": 101,
+        "totalTokens": 1603
+      }
+    },
+    "error": {
+      "code": "AUTHORIZATION_DENIED",
+      "message": "An action is not authorized.",
+      "retryable": false
+    }
+  },
+  {
+    "mode": "scripted",
+    "plan_id": "plan-472d8eb1606d4b88bff2201d68dc8d8b",
+    "status": "REJECTED",
+    "provider": "SCRIPTED_IMAGE_FIXTURE",
+    "attempted_actions": {
+      "actions": [
+        {
+          "count": 11,
+          "from": "A",
+          "to": "C",
+          "type": "move_packages"
+        }
+      ]
+    },
+    "authorization_engine": "VERIFIED_PERMISSIONS",
+    "reason_codes": [
+      "LIMIT_EXCEEDED"
+    ],
+    "warehouse_version_before": 1,
+    "warehouse_version_after": 1,
+    "warehouse_unchanged": true,
+    "execution": null,
+    "simulation": null,
+    "metrics": {
+      "model_calls": 0,
+      "provider": "SCRIPTED_IMAGE_FIXTURE",
+      "usage": {}
+    },
+    "error": {
+      "code": "AUTHORIZATION_DENIED",
+      "message": "An action is not authorized.",
+      "retryable": false
+    }
+  }
+]

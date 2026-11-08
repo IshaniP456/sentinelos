@@ -2,6 +2,18 @@
 
 Author: Tishneet.
 
+`plan-status.image.live.rejected.json` and `plan-status.image.scripted.rejected.json`
+are actual public WorkflowService projections read from the orchestration table
+after the updated deployed worker processed each image submission. The driver
+submitted via AwsWorkflowBackend directly, not Ishani's HTTP route. Both reached
+REJECTED/LIMIT_EXCEEDED with real Verified Permissions and unchanged version1.
+The live candidate came from Nova's image block; the scripted candidate made zero
+model calls and is labeled SCRIPTED_IMAGE_FIXTURE. No image bytes are returned.
+This verifies bounded image-instruction extraction plus existing authorization;
+it is not a universal prompt-injection defense benchmark. The first exploratory
+image probe failed strict instruction parsing; tightening the canonical output
+prompt produced successful live probes. No fallback or validator relaxation was used.
+
 `bedrock-smoke.workshop-profile.json` is the assistant-observed successful smoke
 using Tishneet's default workshop AWS profile (not a bearer key), at
 2026-11-08T01:31:21.142020+00:00. Two real Nova Pro calls passed; scripted snapshots

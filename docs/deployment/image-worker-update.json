@@ -1,0 +1,10 @@
+{
+  "stack_name": "sentinel-workflow-tishneet",
+  "bucket": "aws-sam-cli-managed-default-samclisourcebucket-undvmvfq0vtn",
+  "key": "sentinel-workflow-tishneet/21735befca9475ea9e072d312919e254ba5fd15e14f74380c60e809960c8332b/workflow.zip",
+  "archive_sha256": "21735befca9475ea9e072d312919e254ba5fd15e14f74380c60e809960c8332b",
+  "template_sha256": "746fa96b32811f564138efbe1b21aae0a0815e9b6555640d506538065b6d9a16",
+  "workflow_commit": "05cb885",
+  "image_demo_enabled": true,
+  "changeset_arn": "arn:aws:cloudformation:us-east-1:737876441172:changeSet/image-746fa96b32811f56/e45f154a-fe1c-4635-8710-9ffa4d9d9269"
+}

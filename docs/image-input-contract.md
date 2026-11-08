@@ -3,6 +3,16 @@
 Author: Tishneet. Version1. This is an additive warehouse input mode, not an S3
 preview or a new authorization system. API handlers remain Ishani-owned.
 
+Backend code commit05cb885 is deployed to the existing workflow worker. Both live
+and scripted image plans were rejected by the deployed Verified Permissions path
+with LIMIT_EXCEEDED; warehouse inventory/version1 stayed unchanged. The scripted
+worker preset is enabled. API routing/upload UI still requires Ishani's change.
+Existing state-machine ARN, workflow table and IAM permissions remain unchanged.
+Examples: examples/plan-status.image.live.rejected.json and
+examples/plan-status.image.scripted.rejected.json. These are actual public service
+projections of persisted plans processed by the deployed worker, not captures of
+an image POST/GET HTTP route already integrated into Ishani's API.
+
 ## Submit and poll
 
 Text stays unchanged: POST /v1/plans with {instruction}.
@@ -60,7 +70,7 @@ SHA256: b4bc7e16f1f01f81e5a47fc34dc279f22846efc6f63e6e7a6e2432a877f63271
 
 Both API and worker must opt in with SENTINEL_IMAGE_DEMO_ENABLED=true. The workflow
 SAM parameter ImageDemoEnabled controls the worker setting (default false).
-Only the exact published asset is accepted. This mode substitutes the fixed
+Only the exact published asset is accepted.
 Keep the original bytes when uploading this preset; do not resize or re-encode it.
 This mode substitutes the fixed
 instruction "Move 11 packages from Zone A to Zone C." and its matching normal
@@ -90,6 +100,11 @@ Bedrock still needs only existing model invocation permission.
 Deploy the updated workflow artifact with its image asset, then package these
 modules with Ishani's API. Merely changing the API body does not update the worker.
 Do not enable the stage preset globally without its visible label.
+
+Worker deployment is complete. Ishani needs the updated backend/ai and
+backend/workflows modules, the backend/ai/assets/image-injection-v1.png asset, her
+POST routing change, and SENTINEL_IMAGE_DEMO_ENABLED=true in the API process for
+the labeled preset. Keep her verified identity/auth path unchanged.
 
 References: [Converse image block](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ImageBlock.html),
 [Nova image understanding](https://docs.aws.amazon.com/nova/latest/userguide/modalities-image.html).

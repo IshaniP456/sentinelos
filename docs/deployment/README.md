@@ -2,6 +2,13 @@
 
 Author: Tishneet. Account737876441172, us-east-1.
 
+Subsequent image-input update: worker code05cb885 deployed successfully, with
+ImageDemoEnabled=true. See image-worker-update.json, image-demo-results.json and
+../image-input-contract.md. Real and scripted image requests passed live denial
+acceptance; original table/state-machine identifiers and permissions are unchanged.
+Ishani's image HTTP routing and UI remain separate integration work. The original
+source/deployment manifests below describe the initial warehouse deployment.
+
 Stack `sentinel-workflow-tishneet` reached CREATE_COMPLETE. Actual resource
 identifiers are in stack-outputs.json. The deployment packages Tishneet commit
 d6c0aee with Mariam's security/core gateway commit756401f. No API, frontend,

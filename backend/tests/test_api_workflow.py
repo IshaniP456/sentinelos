@@ -40,6 +40,29 @@ class ApiWorkflowTests(unittest.TestCase):
             self.assertEqual(json.loads(status["body"])["status"], "PLANNING")
         self.assertEqual(self.service.gateway.get_warehouse()["version"], 1)
 
+    def test_image_adapter_submission_returns_normal_trackable_reference(self):
+        import base64
+        from backend.ai.image_input import demo_image
+        result = self.adapter.start_image_plan(base64.b64encode(demo_image()).decode(), "image/png")
+        self.assertEqual(result["status"], "PLANNING")
+        status = self.adapter.get_plan_status(result["plan_id"])
+        self.assertEqual(status["input_metadata"]["mode"], "live")
+        self.assertNotIn("image_b64", status)
+
+    def test_image_start_timeout_preserves_original_reference(self):
+        import base64
+        from backend.ai.image_input import demo_image
+        class TimeoutClient:
+            def start_execution(self, **kwargs):
+                self.input = kwargs["input"]
+                raise TimeoutError("unconfirmed start")
+        client = TimeoutClient()
+        self.adapter.starter = AwsWorkflowBackend(self.service, "arn:example:machine", client)
+        result = self.adapter.start_image_plan(base64.b64encode(demo_image()).decode(), "image/png")
+        self.assertFalse(result["start_confirmed"])
+        self.assertEqual(json.loads(client.input), {"plan_id": result["plan_id"]})
+        self.assertEqual(len(self.service.store.list("PLAN#")), 1)
+
     def test_invalid_request_standard_error(self):
         response = self.call("POST", "/v1/plans", {"instruction": "Do something safe"})
         self.assertEqual(response["statusCode"], 400)
