@@ -59,8 +59,13 @@ export function submitPlan(instruction) {
 // Image prompt-injection input (Tishneet's image contract). Exactly one body
 // variant: image (never mixed with text). Scripted preset adds demo_mode.
 // Browser never holds model credentials.
-export function submitImage({ image_b64, mime_type, demo_mode } = {}) {
+export function submitImage({ image_b64, mime_type, demo_mode, instruction } = {}) {
   if (MOCK) return mockApi.submitImage({ image_b64, mime_type, demo_mode })
+  // The deployed Lambda has no image handler, so a scripted preset can't run
+  // image extraction live. Instead we submit the (scripted) extracted text as a
+  // real text plan: the extraction is scripted, but the LIMIT_EXCEEDED rejection
+  // is produced live by the real policy engine. Labeled as such in the panel.
+  if (demo_mode && instruction) return request('POST', '/plans', { instruction })
   const body = { image_b64, mime_type }
   if (demo_mode) body.demo_mode = demo_mode
   return request('POST', '/plans', body)

@@ -38,8 +38,12 @@ export default function AboutView({ onStart }) {
       <section className="card card-pad sm:p-6">
         <div className="label mb-2 text-brand">Why it matters</div>
         <p className="text-lg leading-relaxed text-slate-200">
+          Guardrails check the text. Policy engines check one action.
+          <span className="text-brand"> SentinelOS checks what the whole plan does to the system.</span>
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-slate-400">
           An allowed action can still break things — moving 5 packages into a zone with room for 2 overflows it.
-          <span className="text-brand"> We catch that by simulating the plan first.</span>
+          We catch that by simulating the entire plan against live state first.
         </p>
       </section>
 

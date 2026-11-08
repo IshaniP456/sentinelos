@@ -41,7 +41,7 @@ function ZoneCard({ name, zone, projected, onEdit, onRemove, busy }) {
         </div>
       )}
 
-      {!editing ? (
+      {!onEdit ? null : !editing ? (
         <div className="mt-auto flex gap-2">
           <button className="btn-ghost px-3 py-1.5 text-xs" onClick={() => { setInv(zone.inventory); setCap(zone.capacity); setEditing(true) }} disabled={busy}>
             Edit
@@ -111,7 +111,7 @@ function AddZoneCard({ onAdd, busy }) {
   )
 }
 
-export default function ZonesPanel({ warehouse, projectedState, onAddZone, onEditZone, onRemoveZone, busy }) {
+export default function ZonesPanel({ warehouse, projectedState, onAddZone, onEditZone, onRemoveZone, busy, editable = true }) {
   if (!warehouse) return <div className="card card-pad text-sm text-slate-500">Loading zones…</div>
   const zones = Object.entries(warehouse.zones)
   return (
@@ -123,9 +123,11 @@ export default function ZonesPanel({ warehouse, projectedState, onAddZone, onEdi
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {zones.map(([name, zone]) => (
           <ZoneCard key={name} name={name} zone={zone} projected={projectedState?.[name]}
-            onEdit={onEditZone} onRemove={zones.length > 1 ? onRemoveZone : null} busy={busy} />
+            onEdit={editable ? onEditZone : null}
+            onRemove={editable && zones.length > 1 ? onRemoveZone : null} busy={busy} />
         ))}
-        <AddZoneCard onAdd={onAddZone} busy={busy} />
+        {/* Add/edit/remove are demo-mode only — the real warehouse has fixed zones. */}
+        {editable && <AddZoneCard onAdd={onAddZone} busy={busy} />}
       </div>
       {warehouse.restricted_zones?.length > 0 && (
         <p className="mt-2 text-xs text-slate-500">

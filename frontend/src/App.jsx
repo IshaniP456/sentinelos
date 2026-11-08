@@ -76,7 +76,9 @@ export default function App() {
     const id = setInterval(async () => {
       try {
         const next = await api.getPlanStatus(planIdRef.current)
-        setPlan(next)
+        // Preserve the scripted-attack image framing across polls (the live
+        // text plan the preset submits carries no input_metadata of its own).
+        setPlan((prev) => ({ ...next, input_metadata: next.input_metadata || prev?.input_metadata }))
         const log = await api.getAuditLog()
         setEvents(log.events)
         if (next.status === 'COMPLETED') setWarehouse(await api.getWarehouse())
@@ -103,6 +105,14 @@ export default function App() {
     }
   }
 
+  // In real (non-mock) mode the scripted attack submits its extracted text as a
+  // live plan, so the response has no image metadata — stamp it here so the
+  // panel renders the injection narrative over the live rejection.
+  const stampImage = (p) =>
+    !p || IS_MOCK || p.input_metadata
+      ? p
+      : { ...p, input_metadata: { type: 'image', mode: 'scripted', intent_source: 'UNTRUSTED_IMAGE_EXTRACTION' } }
+
   const handleSubmitImage = async (meta) => {
     setError(null)
     setSubmitting(true)
@@ -110,7 +120,7 @@ export default function App() {
       const { plan_id } = await api.submitImage(meta)
       planIdRef.current = plan_id
       savePlanId(plan_id)
-      setPlan(await api.getPlanStatus(plan_id))
+      setPlan(stampImage(await api.getPlanStatus(plan_id)))
       setEvents((await api.getAuditLog()).events)
     } catch (e) {
       setError(errMessage(e))
@@ -231,6 +241,7 @@ export default function App() {
               onEditZone={handleEditZone}
               onRemoveZone={handleRemoveZone}
               busy={busy}
+              editable={IS_MOCK}
             />
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -240,7 +251,7 @@ export default function App() {
               <WorkflowStatus plan={plan} />
             </div>
 
-            <ImageAttackPanel onSubmitImage={handleSubmitImage} plan={plan} submitting={submitting} />
+            <ImageAttackPanel onSubmitImage={handleSubmitImage} plan={plan} submitting={submitting} isMock={IS_MOCK} />
 
             <PlanComparison plan={plan} />
 

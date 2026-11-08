@@ -1,0 +1,28 @@
+# AWS Amplify Hosting build spec for the SentinelOS frontend.
+#
+# Set these two environment variables in the Amplify console
+# (App settings -> Environment variables) to wire the UI to the real API:
+#
+#   VITE_MOCK          = false
+#   VITE_API_BASE_URL  = https://hsudj7t7s2.execute-api.us-east-1.amazonaws.com/v1
+#
+# Vite reads VITE_* from the build environment, so no code change is needed.
+# (Manual zip deploys build locally with these same vars instead.)
+version: 1
+applications:
+  - appRoot: frontend
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: dist
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*

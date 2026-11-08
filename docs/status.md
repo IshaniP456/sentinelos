@@ -37,5 +37,96 @@ request was run this session and the plan_id is recorded below._
 - `sentinel-data-reset` already has `STATE_MACHINE_ARN` set (Mariam's reset guard). ✅
 - **Not redeployed:** the running config already matches the handoff exactly; a redeploy would be a no-op and risks the working stack. Repo-template reconciliation (the committed `backend/api/template.yaml` still shows `Backend=aws`) is tracked as a doc/reproducibility follow-up, not a change to the running system.
 
+## A6 — deployed frontend wiring (2026-11-08)
+- `amplify.yml` added: builds `frontend/`; the two env vars to set in the Amplify
+  console are **`VITE_MOCK=false`** and **`VITE_API_BASE_URL=https://hsudj7t7s2.execute-api.us-east-1.amazonaws.com/v1`**. (The current app is a manual-zip deploy, so the equivalent flip is a local build with those vars + redeploy.)
+- Zone add/edit/remove are now hidden when `VITE_MOCK` is false (real warehouse has fixed zones).
+- **CORS verified:** the deployed API returns `access-control-allow-origin: https://main.d1awkbyla46117.amplifyapp.com`. ✅
+
+## ⛔ BLOCKER — admin auth on the deployed API (blocks A4, A5, A6-flip, A7)
+Verified by curl 2026-11-08:
+- `POST /v1/demo/reset` → **403** `{"error":{"code":"FORBIDDEN","message":"Administrator authorization required."}}`
+- `POST /v1/approvals/{id}` → **403** (same)
+- `aws apigateway get-authorizers --rest-api-id hsudj7t7s2` → **`[]`** (no authorizer).
+
+Root cause: the deployed Lambda runs `SENTINEL_AUTH_MODE=prod`, which requires an
+API Gateway authorizer's claims; the workflow factory refuses `open`/`dev` in AWS
+runtime. With no authorizer configured, every admin action (Approve / Revoke /
+Reset) returns 403. **D1 (no admin) works via curl** — `plan-42afbee0319e4faeb634fbfe78be7af4` → COMPLETED, A17/B8/C8 v2.
+
+**RESOLVED (2026-11-08):** added a **demo-grade API Gateway Lambda authorizer**
+(`backend/api/demo_authorizer.py`) that grants administrator to every caller so
+the `prod`-mode admin routes work. ⚠️ Demo-grade only — not real authentication;
+a production deploy replaces it with a real IdP (Cognito). Labeled as such here
+and on the status slide. (Colon-free `role: admin` context, since API Gateway
+mangles context keys with a colon.)
+
+### A3–A5 — live via curl against the deployed API, sequential from one reset
+| Step | plan_id | Result |
+|---|---|---|
+| A3 · D1 | `plan-012a42e85bfb464eb5c47a595c629087` | COMPLETED → A17/B8/C8 v2 ✅ |
+| A4 · D2 | `plan-8ddf0e4fcca9418e971f29bbda2939dc` | split A→B×2 + A→C×3, authz+sim pass → AWAITING_APPROVAL → approve → COMPLETED A12/B10/C11 v3 ✅; **2nd approve = no change** (no double-execute) ✅ |
+| A5 · D3 | `plan-2501762e4f68406e910bb4f0e76365bf` | revoke → REJECTED, unchanged A12/B10/C11 v3 → reset → seed ✅ |
+
+Note: real Nova proposed the valid D2 split directly (1 candidate, no visible
+rejection) — expected per the PRD; the capacity-rejection visual uses the
+labeled preflight preset.
+
+## A6 — deployed site flipped to the real API (2026-11-08)
+- Rebuilt with `VITE_MOCK=false` + `VITE_API_BASE_URL=.../v1`; deployed to Amplify
+  (`main.d1awkbyla46117.amplifyapp.com`), bundle contains the execute-api host.
+- Zone add/edit/remove hidden (not mock). CORS preflight for plans / approvals /
+  revoke / reset all → **204**. Full D1 through the deployed path (Origin-stamped)
+  → COMPLETED A17/B8/C8 v2 (`plan-a8748e6def5741a08da485094e7d840d`), reset → seed.
+
+## B1–B5 + redeploy (2026-11-08)
+- B1 README, B2 Measured section, B3 image panel (scripted preset → live text
+  rejection; live-upload hidden off-mock), B4 About "Why it matters", B5
+  `docs/demo-script.md` — all committed.
+- Frontend rebuilt (real mode) and redeployed to Amplify **job #6 → SUCCEED**.
+  Live bundle verified to contain the B4 copy, the B3 label, and the real API
+  host. Warehouse reset to seed (A20/B8/C5 v1) for the demo.
+
+## A7 — three D1/D2/D3 runs through the deployed UI
+Backend + deployed-site network path are **verified** (A3–A5 by curl; A6
+Origin-stamped D1). The UI calls the exact same endpoints. **The three UI
+click-through runs are a human step** (this session has no browser) — steps in
+`docs/demo-script.md`. UI run results to be recorded here by the operator:
+| Run | D1 | D2 | D3 |
+|---|---|---|---|
+| 1 |  |  |  |
+| 2 |  |  |  |
+| 3 |  |  |  |
+
+## Measured
+_Honest single-session observations — **two observed calls, not a percentile distribution.**_
+
+**Latency (Bedrock Nova Pro, Converse):**
+- Initial plan generation: **~1012 ms**
+- Replan after a simulation rejection: **~698 ms**
+- These are two individual Converse calls observed during the live D-runs
+  (recorded `plan_id`s above), not p50/p95 over a sample.
+
+**Token usage (same two calls):**
+- Plan generation: **747 tokens**; replan: **886 tokens** (input+output per call).
+  Again two calls, not an average.
+
+**Simulator test coverage** (`backend/tests/test_simulator.py`, Mariam's branch):
+- **37 test functions** (5 of them `@pytest.mark.parametrize`, so more cases run).
+- Includes `test_move_2_then_1_from_a_to_b_fails_cumulative_capacity` — the
+  "**two transfers each fit, but together exceed B**" case, which is the whole
+  point of whole-plan simulation vs. per-action checks.
+
+**Security posture:**
+- Authorization: Amazon Verified Permissions + Cedar policies (agent revoke →
+  `AGENT_REVOKED` deny, verified in D3).
+- Commit safety: DynamoDB conditional writes with version checks + idempotency
+  markers (`sentinel_executions`) — re-approving an already-executed plan is a
+  no-op (verified in A4: 2nd approve = no change).
+- Admin actions: signed HMAC-SHA256 assertions server-side; the deployed API
+  runs `AUTH_MODE=prod` behind an API Gateway authorizer. The current authorizer
+  is **demo-grade** (grants admin to every caller) — labeled as such; production
+  swaps in a real IdP (Cognito). No secrets in the browser.
+
 ## Notes
-- Measured numbers + security posture: see the "Measured" section (added in B2).
+- See the "Measured" section above for numbers + security posture.

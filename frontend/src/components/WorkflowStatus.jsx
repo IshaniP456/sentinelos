@@ -25,6 +25,22 @@ function stepState(stepKey, plan) {
   const terminal = TERMINAL_STATUSES.includes(status)
   const rejected = status === 'REJECTED' || status === 'FAILED' || status === 'EXPIRED'
 
+  // When a plan is blocked (e.g. the agent proposed an over-capacity move with no
+  // safe alternative), reflect the actual check outcomes from the final candidate
+  // so the pipeline shows WHERE it stopped — authorization passed, simulation
+  // refused — instead of a row of empty circles.
+  const lastCand = plan.candidates?.[plan.candidates.length - 1]
+  if (rejected && lastCand && (plan.candidates?.length ?? 0) < 2) {
+    if (stepKey === 'AUTHORIZING') {
+      return lastCand.authorization?.allowed
+        ? { icon: '✓', tone: 'text-status-green' }
+        : { icon: '✗', tone: 'text-status-red', note: 'denied' }
+    }
+    if (stepKey === 'SIMULATING' && lastCand.simulation?.passed === false) {
+      return { icon: '✗', tone: 'text-status-red', note: 'capacity exceeded → blocked' }
+    }
+  }
+
   // The replanning step only applies when there is more than one candidate.
   if (stepKey === 'REPLANNING' && (plan.candidates?.length ?? 0) < 2) {
     return { icon: '·', tone: 'text-slate-600', note: 'not needed' }

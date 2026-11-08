@@ -1,11 +1,23 @@
 import { useState } from 'react'
 import { statusTone, TONE } from '../lib/format.js'
+import { IS_MOCK } from '../services/api.js'
 
 // Example requests. Each fills the box so people can see what the agent does.
+// The "Over capacity" instruction differs by mode: the mock engine keys off the
+// word "preflight" to play the scripted rejection, but the live backend parses
+// more reliably without that prefix — so send a plain move on the real site.
 const PRESETS = [
   { title: 'Simple move', hint: 'Move 3 from A → C. Low-risk, so it runs on its own.', text: 'Move three packages from Zone A to Zone C.' },
   { title: 'Big move', hint: 'Move 5 out of A. Large, so it pauses for your approval.', text: 'Move five packages out of Zone A, preferably into Zone B. Use another zone if necessary.' },
-  { title: 'Over capacity', hint: 'Force 5 into B (only fits 2). Blocked — the AI retries a safe split.', text: 'Run preflight test: move five packages from Zone A to Zone B.' },
+  {
+    title: 'Over capacity',
+    hint: IS_MOCK
+      ? 'Force 5 into B (only fits 2). Blocked — the AI retries a safe split.'
+      : 'Force 5 into B (only fits 2). Simulation blocks it — nothing moves.',
+    text: IS_MOCK
+      ? 'Run preflight test: move five packages from Zone A to Zone B.'
+      : 'Move five packages from Zone A to Zone B.',
+  },
 ]
 
 // The browser submits ONLY the instruction string (contract §2.4); the backend
