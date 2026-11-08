@@ -56,6 +56,16 @@ export function submitPlan(instruction) {
   return request('POST', '/plans', { instruction })
 }
 
+// Image prompt-injection input (Tishneet's image contract). Exactly one body
+// variant: image (never mixed with text). Scripted preset adds demo_mode.
+// Browser never holds model credentials.
+export function submitImage({ image_b64, mime_type, demo_mode } = {}) {
+  if (MOCK) return mockApi.submitImage({ image_b64, mime_type, demo_mode })
+  const body = { image_b64, mime_type }
+  if (demo_mode) body.demo_mode = demo_mode
+  return request('POST', '/plans', body)
+}
+
 export function getPlanStatus(planId) {
   if (MOCK) return mockApi.getPlanStatus(planId)
   return request('GET', `/plans/${encodeURIComponent(planId)}`)
@@ -77,6 +87,12 @@ export function getAuditLog(planId) {
   return request('GET', `/audit${qs}`)
 }
 
+// Clear the activity log (mock/demo convenience; no-op display clear on real).
+export function clearAudit() {
+  if (MOCK) return mockApi.clearAudit()
+  return Promise.resolve({ events: [] })
+}
+
 export function approvePlan(approvalId) {
   if (MOCK) return mockApi.decideApproval(approvalId, 'APPROVED')
   return request('POST', `/approvals/${encodeURIComponent(approvalId)}`, { decision: 'APPROVED' })
@@ -95,6 +111,28 @@ export function revokeAgent() {
 export function resetDemo() {
   if (MOCK) return mockApi.resetDemo()
   return request('POST', '/demo/reset', {})
+}
+
+// --- zone management (mock-only; real backend has fixed demo zones) ----------
+export function addZone(name, capacity, inventory = 0) {
+  if (MOCK) return mockApi.addZone(name, capacity, inventory)
+  return Promise.reject(makeUnsupported('add zone'))
+}
+
+export function editZone(name, patch) {
+  if (MOCK) return mockApi.editZone(name, patch)
+  return Promise.reject(makeUnsupported('edit zone'))
+}
+
+export function removeZone(name) {
+  if (MOCK) return mockApi.removeZone(name)
+  return Promise.reject(makeUnsupported('remove zone'))
+}
+
+function makeUnsupported(what) {
+  const e = new Error(`Zone management (${what}) is a demo-mode feature; the real warehouse uses fixed zones.`)
+  e.payload = { error: { code: 'INVALID_REQUEST', message: e.message, retryable: false } }
+  return e
 }
 
 export const IS_MOCK = MOCK

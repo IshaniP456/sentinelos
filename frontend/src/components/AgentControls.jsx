@@ -13,23 +13,26 @@ export default function AgentControls({ agent, onRevoke, busy }) {
 
   return (
     <section className="card card-pad">
-      <h2 className="label mb-3">Administration · Agent Controls</h2>
+      <h2 className="label">Agent access</h2>
+      <p className="mb-3 mt-1 text-xs text-slate-500">
+        The AI agent’s permission to act. Revoke it to block everything it tries — instantly.
+      </p>
 
-      <div className="flex items-center justify-between rounded-lg bg-ink-700 p-3">
+      <div className="flex items-center justify-between rounded-xl bg-ink-700 p-3">
         <div>
           <div className="text-sm font-semibold text-white">{agent?.agent_id || '—'}</div>
-          <div className="text-xs text-slate-500">{agent?.role}</div>
+          <div className="text-xs text-slate-500">the AI agent</div>
         </div>
         <span className={`flex items-center gap-2 text-sm font-bold ${tone.text}`}>
           <span className={`h-2.5 w-2.5 rounded-full ${tone.dot}`} />
-          {agent?.status || '—'}
+          {agent?.status === 'ACTIVE' ? 'ACTIVE · can act' : (agent?.status || '—')}
         </span>
       </div>
 
       <div className="mt-3">
         {revoked ? (
           <p className="text-xs text-status-red">
-            Agent revoked. The backend now denies every subsequent authorization check.
+            Revoked — the agent can’t do anything now. (Reset to bring it back.)
           </p>
         ) : confirming ? (
           <div className="flex items-center gap-2">

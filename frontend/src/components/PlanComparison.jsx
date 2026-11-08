@@ -31,13 +31,13 @@ function CandidatePanel({ candidate, isActive }) {
 
   return (
     <div className={`card card-pad ${isActive ? 'ring-1 ring-status-blue/50' : ''}`}>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h4 className="text-sm font-semibold text-white">
-          Revision {candidate.revision}
-          {isActive && <span className="ml-2 text-xs text-status-blue">selected</span>}
+          {candidate.revision === 1 ? 'AI’s first plan' : `AI’s revised plan${candidate.revision > 2 ? ` (try ${candidate.revision})` : ''}`}
+          {isActive && <span className="ml-2 text-xs text-status-blue">← chosen</span>}
         </h4>
         <span className={`text-xs font-bold ${tone.text}`}>
-          {passed ? '✓ SIMULATION PASSED' : '✗ REJECTED'}
+          {passed ? '✓ Safe to run' : '✗ Would break a zone'}
         </span>
       </div>
 
@@ -116,13 +116,13 @@ export default function PlanComparison({ plan }) {
 
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="label">Plan Comparison · Original vs Revised</h2>
-        <span className="text-xs text-slate-500">attempt {plan.attempt} · max 3 candidates</span>
-      </div>
+      <h2 className="label">What the AI proposed</h2>
+      <p className="mb-3 mt-1 text-xs text-slate-500">
+        If the AI’s first plan is unsafe, it gets blocked and the AI tries again. Here’s each attempt.
+      </p>
 
-      <div className="mb-3 rounded-lg border border-ink-600 bg-ink-800 p-3">
-        <div className="label mb-1">Operator goal</div>
+      <div className="mb-3 rounded-xl border border-ink-600 bg-ink-800 p-3">
+        <div className="label mb-1">You asked for</div>
         <p className="text-sm italic text-slate-300">“{plan.instruction}”</p>
       </div>
 
