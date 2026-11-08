@@ -35,6 +35,14 @@ Each scenario runs twice on a fresh local mock of AWS (moto, no real AWS):
 Attacks applied: naive 13 of 13, SentinelOS 0 of 13.
 Legitimate plans wrongly blocked by SentinelOS: 0 of 2.
 
+**Scope of the "admin" row.** The revoke and reset Lambdas act only on a signed,
+single-use, 60-second admin proof, and refuse a plain "admin" string. In the
+hackathon deployment, the public API issues that proof through a demo-grade
+authorizer that treats every caller as an administrator. So this row holds for
+the data layer, not yet for the public API. The production path is a Cognito user
+pool with an `admin` group, which `backend/api/auth.py` already reads in prod mode.
+The demo authorizer should be switched off after judging.
+
 Rerun:
 
 ```
