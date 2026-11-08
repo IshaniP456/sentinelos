@@ -90,5 +90,35 @@ click-through runs are a human step** (this session has no browser) — steps in
 | 2 |  |  |  |
 | 3 |  |  |  |
 
+## Measured
+_Honest single-session observations — **two observed calls, not a percentile distribution.**_
+
+**Latency (Bedrock Nova Pro, Converse):**
+- Initial plan generation: **~1012 ms**
+- Replan after a simulation rejection: **~698 ms**
+- These are two individual Converse calls observed during the live D-runs
+  (recorded `plan_id`s above), not p50/p95 over a sample.
+
+**Token usage (same two calls):**
+- Plan generation: **747 tokens**; replan: **886 tokens** (input+output per call).
+  Again two calls, not an average.
+
+**Simulator test coverage** (`backend/tests/test_simulator.py`, Mariam's branch):
+- **37 test functions** (5 of them `@pytest.mark.parametrize`, so more cases run).
+- Includes `test_move_2_then_1_from_a_to_b_fails_cumulative_capacity` — the
+  "**two transfers each fit, but together exceed B**" case, which is the whole
+  point of whole-plan simulation vs. per-action checks.
+
+**Security posture:**
+- Authorization: Amazon Verified Permissions + Cedar policies (agent revoke →
+  `AGENT_REVOKED` deny, verified in D3).
+- Commit safety: DynamoDB conditional writes with version checks + idempotency
+  markers (`sentinel_executions`) — re-approving an already-executed plan is a
+  no-op (verified in A4: 2nd approve = no change).
+- Admin actions: signed HMAC-SHA256 assertions server-side; the deployed API
+  runs `AUTH_MODE=prod` behind an API Gateway authorizer. The current authorizer
+  is **demo-grade** (grants admin to every caller) — labeled as such; production
+  swaps in a real IdP (Cognito). No secrets in the browser.
+
 ## Notes
-- Measured numbers + security posture: see the "Measured" section (added in B2).
+- See the "Measured" section above for numbers + security posture.
