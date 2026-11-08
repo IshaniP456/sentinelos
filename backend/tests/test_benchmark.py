@@ -27,8 +27,19 @@ def test_sentinelos_does_not_block_legitimate_plans(rows):
 
 def test_headline_numbers(rows):
     attacks = sum(not s.legitimate for s in SCENARIOS)
-    assert summarize(rows) == {"attacks": attacks, "naive_applied": attacks, "sentinel_applied": 0,
-                               "legitimate": 2, "sentinel_false_blocks": 0}
+    summary = summarize(rows)
+    assert {k: summary[k] for k in ("attacks", "naive_applied", "sentinel_applied", "legitimate",
+                                    "sentinel_false_blocks")} == {
+        "attacks": attacks, "naive_applied": attacks, "sentinel_applied": 0,
+        "legitimate": 2, "sentinel_false_blocks": 0}
+
+
+def test_layer_breakdown(rows):
+    summary = summarize(rows)
+    assert summary["by_layer"] == {"policy": 5, "approval_rule": 1, "simulation": 2, "binding": 4,
+                                   "admin_proof": 1}
+    assert summary["beyond_per_action_policy"] == 6
+    assert all(r["layer"] != "other" for r in rows if not r["legitimate"])
 
 
 def test_expected_reasons(rows):

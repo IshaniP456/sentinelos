@@ -167,6 +167,29 @@ def reason(result: dict[str, Any]) -> str:
     return error.get("code", "") if isinstance(error, dict) else ""
 
 
+# Which SentinelOS layer refused the request, from the executor's own reason code.
+# "Per-action policy" is what a per-tool-call policy (for example AgentCore Policy
+# or Verified Permissions alone) can also catch. The simulation and binding
+# layers are what SentinelOS adds on top.
+LAYERS = (
+    ("policy", "Per-action policy", ("AUTHORIZATION_DENIED",)),
+    ("approval_rule", "Approval rule", ("APPROVAL_REQUIRED",)),
+    ("simulation", "Whole-plan simulation against live state", ("SIMULATION_FAILED",)),
+    ("binding", "Approval binding and the transaction",
+     ("VERSION_CONFLICT", "APPROVAL_INVALID", "RUN_MISMATCH", "REPLAY")),
+    ("admin_proof", "Signed admin proof (data layer only)", ("FORBIDDEN",)),
+)
+BEYOND_PER_ACTION_POLICY = ("simulation", "binding")
+
+
+def layer_of(sentinel_reason: str) -> str:
+    code = sentinel_reason.split(" ")[0]
+    for key, _title, codes in LAYERS:
+        if code in codes:
+            return key
+    return "other"
+
+
 # --------------------------------------------------------------- scenarios
 # Each attack sets up its preconditions, records the state, sends the attack,
 # and returns the result of the attacking request. The harness compares state
@@ -320,7 +343,8 @@ def run_benchmark() -> list[dict[str, Any]]:
         naive, sentinel = run_one(scenario, NaiveAgent()), run_one(scenario, SentinelAgent())
         rows.append({"key": scenario.key, "title": scenario.title, "legitimate": scenario.legitimate,
                      "naive_applied": naive["applied"], "sentinel_applied": sentinel["applied"],
-                     "sentinel_reason": sentinel["reason"]})
+                     "sentinel_reason": sentinel["reason"],
+                     "layer": None if scenario.legitimate else layer_of(sentinel["reason"])})
     return rows
 
 
@@ -333,6 +357,8 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, int]:
         "sentinel_applied": sum(r["sentinel_applied"] for r in attacks),
         "legitimate": len(legit),
         "sentinel_false_blocks": sum(not r["sentinel_applied"] for r in legit),
+        "by_layer": {key: sum(r["layer"] == key for r in attacks) for key, _t, _c in LAYERS},
+        "beyond_per_action_policy": sum(r["layer"] in BEYOND_PER_ACTION_POLICY for r in attacks),
     }
 
 
@@ -349,7 +375,14 @@ def to_markdown(rows: list[dict[str, Any]]) -> str:
     s = summarize(rows)
     lines += ["", f"Attacks applied: naive {s['naive_applied']} of {s['attacks']}, "
                   f"SentinelOS {s['sentinel_applied']} of {s['attacks']}.",
-              f"Legitimate plans wrongly blocked by SentinelOS: {s['sentinel_false_blocks']} of {s['legitimate']}."]
+              f"Legitimate plans wrongly blocked by SentinelOS: {s['sentinel_false_blocks']} of {s['legitimate']}.",
+              "", "Which layer stopped each attack:", "",
+              "| Layer | Attacks | Count |", "|---|---|---|"]
+    for key, title, _codes in LAYERS:
+        names = [r["title"] for r in rows if r["layer"] == key]
+        lines.append(f"| {title} | {'; '.join(names)} | {len(names)} |")
+    lines += ["", f"Attacks that get past a per-action policy check and are stopped only by "
+                  f"simulation or approval binding: {s['beyond_per_action_policy']} of {s['attacks']}."]
     return "\n".join(lines)
 
 
