@@ -50,5 +50,5 @@ def create_service(runtime=None):
         callback = callback_sender()
         audit_sink = gateway.append_audit
     return WorkflowService(store, Planner(provider_from_env()), gateway,
-                           approval_seconds=int(os.environ.get("SENTINEL_APPROVAL_TIMEOUT", "120")),
+                           approval_seconds=int(os.environ.get("SENTINEL_APPROVAL_TIMEOUT", "600")),
                            callback_sender=callback, audit_sink=audit_sink)
