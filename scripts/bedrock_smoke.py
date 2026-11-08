@@ -4,7 +4,9 @@ Warehouse snapshots and rejection feedback are scripted test inputs. Only the
 model outputs are live. Results establish model/schema compatibility, not AWS
 workflow, Verified Permissions or production inventory integration.
 """
+import argparse
 import copy
+import getpass
 from datetime import datetime, timezone
 import json
 import os
@@ -67,7 +69,32 @@ def run_checks(provider):
             "generation_metrics": routine_metrics, "replan_metrics": copy.deepcopy(provider.metrics)}
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    authentication = parser.add_mutually_exclusive_group()
+    authentication.add_argument("--prompt-key", action="store_true",
+                                help="Enter a Bedrock key privately in your terminal; never saved to disk.")
+    authentication.add_argument("--profile", help="AWS shared-credentials profile for model invocation.")
+    parser.add_argument("--region", default=None)
+    parser.add_argument("--model-id", default=None)
+    args = parser.parse_args(argv)
+    if args.prompt_key:
+        if not sys.stdin.isatty():
+            print("Key entry requires an interactive terminal.", file=sys.stderr)
+            return 1
+        key = getpass.getpass("Bedrock API key (hidden): ").strip()
+        if not key:
+            print("No key entered; no request sent.", file=sys.stderr)
+            return 1
+        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = key
+    if args.profile:
+        os.environ["AWS_PROFILE"] = args.profile
+        # Explicit profile selection must not silently reuse a bearer key.
+        os.environ.pop("AWS_BEARER_TOKEN_BEDROCK", None)
+    if args.region:
+        os.environ["AWS_DEFAULT_REGION"] = args.region
+    if args.model_id:
+        os.environ["BEDROCK_MODEL_ID"] = args.model_id
     os.environ["SENTINEL_MODEL_PROVIDER"] = "bedrock"
     os.environ.setdefault("BEDROCK_MODEL_ID", MODEL)
     os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")

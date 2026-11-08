@@ -71,6 +71,36 @@ schema uses Nova's supported subset while the complete independent backend
 validator remains authoritative. See [Nova tool definitions](https://docs.aws.amazon.com/nova/latest/userguide/tool-use-definition.html).
 Failures stop the check; fixtures never replace a failed Bedrock call.
 
+### First live checks without Docker
+
+From the repository root, use the existing virtual environment:
+
+```sh
+.venv/bin/python -m scripts.bedrock_smoke --prompt-key --region us-east-1 --model-id amazon.nova-pro-v1:0
+```
+
+Run this in your own interactive terminal. The key is entered with hidden input,
+is never saved to a file, and exists only in that Python process. Model ID is a
+target until the smoke passes. Key Region/access must match; if a permitted Nova
+inference profile is required, pass its exact ID with `--model-id` and rerun.
+Do not paste tokens in chat or pass them as command-line arguments.
+
+For deployment, configure the temporary access key, secret and session token
+using Workshop Studio's CLI credential instructions outside the repository, then:
+
+```sh
+.venv/bin/python -m scripts.aws_preflight --profile default
+.venv/bin/python -m scripts.bedrock_smoke --profile default --region us-east-1 --model-id amazon.nova-pro-v1:0
+```
+
+Replace `default` with the configured profile name. The read-only preflight stops
+for any account other than 737876441172 and targets us-east-1. Identity success
+does not prove deployment permissions. The profile model test explicitly ignores
+an inherited Bedrock bearer key, so it checks the profile's model permissions.
+The deployed Lambda uses IAM role credentials, not a personal bearer token.
+Build/deploy and the live workflow acceptance gate follow only after access is
+verified; no stack outputs can be supplied before a successful deployment.
+
 Required runtime configuration:
 
 | Variable | Purpose |
