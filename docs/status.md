@@ -128,5 +128,26 @@ _Honest single-session observations — **two observed calls, not a percentile d
   is **demo-grade** (grants admin to every caller) — labeled as such; production
   swaps in a real IdP (Cognito). No secrets in the browser.
 
+### Production admin auth — designed, not deployed (intentional for the demo)
+`AUTH_MODE=prod` means `auth.py` already consumes real identity claims — it reads
+`cognito:groups` and `email` from the authorizer context and requires the caller
+to be in the **`admin`** group. So the production path is a drop-in, not a
+rewrite:
+- Cognito **user pool** (admin-create-only, email as username), **app client**
+  (no secret, SRP + refresh), and a **`admin`** **user-pool group**.
+- A **Cognito authorizer** on the three admin POSTs (approvals / revoke / reset)
+  only — reads and `OPTIONS` stay open so CORS preflight passes.
+- Frontend admin sign-in sends the **ID token** (not access token — `auth.py`
+  needs the `email` claim) as the `Authorization` header; `responses.py` adds
+  `Authorization` to `Access-Control-Allow-Headers`, plus `GatewayResponses`
+  `DEFAULT_4XX` with CORS headers so a 401 isn't surfaced as a CORS error.
+
+Deliberately **not shipped for the hackathon demo**: the live `sentinelos-api`
+stack is a single `{proxy+}`/`ANY` Lambda, so scoping a Cognito authorizer to
+only the admin routes requires de-proxying them into explicit methods — real
+surgery on the working stack. We kept the demo authorizer (which functions
+live) and present Cognito as the production design. **Fallback = current
+deployed state**, no change needed.
+
 ## Notes
 - See the "Measured" section above for numbers + security posture.
