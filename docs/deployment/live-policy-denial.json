@@ -1,0 +1,23 @@
+{
+  "plan_id": "plan-d8304f2c64da4e7bb0c00a2ec9a4729b",
+  "status": "REJECTED",
+  "runtime": {
+    "provider": "BEDROCK",
+    "gateway": "LAMBDA_GATEWAY"
+  },
+  "authorization_engine": "VERIFIED_PERMISSIONS",
+  "reason_codes": [
+    "LIMIT_EXCEEDED"
+  ],
+  "warehouse_version_before": 1,
+  "warehouse_version_after": 1,
+  "warehouse_unchanged": true,
+  "execution": null,
+  "error": {
+    "code": "AUTHORIZATION_DENIED",
+    "message": "An action is not authorized.",
+    "retryable": false
+  },
+  "state_machine_execution_status": "FAILED",
+  "execution_arn": "arn:aws:states:us-east-1:737876441172:execution:WorkflowStateMachine-xOljcGvrjU3e:plan-d8304f2c64da4e7bb0c00a2ec9a4729b"
+}

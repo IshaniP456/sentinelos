@@ -16,6 +16,11 @@ The exact decision/decided_at/plan_id approval envelope now reaches execution.
 
 Tishneet's live Bedrock smoke passed with amazon.nova-pro-v1:0 in us-east-1:
 two real calls, generation and replanning checks passed, zero inventory writes.
-Deployment credentials and the workflow stack are still pending. I will send the
-actual StateMachineArn when deployed, and coordinate your reset-guard redeploy
-before the joint reset/demo run.
+Workflow stack is now CREATE_COMPLETE; the live denial probe reached Verified
+Permissions and left warehouse version1 unchanged. Please set your reset Lambda
+STATE_MACHINE_ARN to:
+
+arn:aws:states:us-east-1:737876441172:stateMachine:WorkflowStateMachine-xOljcGvrjU3e
+
+Then redeploy the reset guard before the joint reset/demo run. Actual outputs
+and evidence are recorded in docs/deployment/.

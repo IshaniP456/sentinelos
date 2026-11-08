@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "states:StartExecution",
+      "Resource": "arn:aws:states:us-east-1:737876441172:stateMachine:WorkflowStateMachine-xOljcGvrjU3e"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "states:SendTaskSuccess",
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:Scan"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:737876441172:table/sentinel-workflow-tishneet-WorkflowTable-INY7ZA3DJ03A"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": [
+        "arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-warehouse",
+        "arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-agent",
+        "arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-runid",
+        "arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-revoke",
+        "arn:aws:lambda:us-east-1:737876441172:function:sentinel-data-reset"
+      ]
+    }
+  ]
+}

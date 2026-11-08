@@ -2,6 +2,12 @@
 
 Author: Tishneet.
 
+`bedrock-smoke.workshop-profile.json` is the assistant-observed successful smoke
+using Tishneet's default workshop AWS profile (not a bearer key), at
+2026-11-08T01:31:21.142020+00:00. Two real Nova Pro calls passed; scripted snapshots
+and zero inventory operations. Credentials are not included. The deployed Lambda
+role was subsequently exercised by the live policy-denial probe in ../deployment.
+
 `bedrock-smoke.nova-pro.json` preserves the successful smoke output Tishneet
 pasted into the session, timestamped 2026-11-08T01:02:25.174571+00:00. It records
 two real Nova Pro calls in us-east-1, with supplied scripted warehouse/failure

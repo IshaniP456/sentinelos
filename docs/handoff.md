@@ -46,8 +46,8 @@ workflow to her six published gateway Lambda callees and its own workflow table.
 For Ishani, the actual local fixture-backed GET response is committed under
 `docs/examples/plan-status.fixture.completed.json`. The ready-to-send message for
 Mariam is `docs/mariam-gateway-handoff.md`. No external message was sent and no
-teammate-owned source was edited. StateMachineArn, physical workflow-table name
-remain pending; no deployed workflow values exist. Live Nova Pro smoke has passed;
+teammate-owned source was edited. Actual StateMachineArn and workflow-table outputs
+are now recorded under docs/deployment. Live Nova Pro smoke has passed;
 see docs/examples/bedrock-smoke.nova-pro.json (user-provided terminal output).
 
 Planning, validation, bounded candidates, risk, approvals, durable progress,
@@ -57,6 +57,6 @@ Unconfirmed execution remains EXECUTING/EXECUTION_UNCONFIRMED, blocks reset, and
 uses bounded same-ID retries. A trusted operator reconciles the original plan;
 there is no public execute endpoint. Audit has a separate durable cursor.
 
-Live AWS acceptance needs account/Region/model configuration, real backend
-identities, and Mariam's authorization/data/execution/audit adapter. Fixtures
+Live Step Functions/Bedrock/Verified Permissions policy-denial acceptance passed.
+Joint API approval/execution/reset acceptance remains pending. Fixtures
 remain labeled; local checks do not claim AWS deployment or real-model invocation.

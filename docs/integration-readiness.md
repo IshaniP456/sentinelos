@@ -1,6 +1,6 @@
 # Workflow integration readiness
 
-Author: Tishneet. No workflow deployment claimed.
+Author: Tishneet. Workflow stack deployed; see deployment/README.md.
 
 ## Current checklist
 
@@ -13,9 +13,9 @@ Author: Tishneet. No workflow deployment claimed.
   errors, with sanitized messages and boolean retry flags.
 - [x] Real Nova Pro generation and replanning smoke passed in Tishneet's terminal.
   Evidence: examples/bedrock-smoke.nova-pro.json; provided by Tishneet in chat.
-- [ ] Configure AWS deployment profile and verify account737876441172/us-east-1.
-- [ ] Verify deployment-role model access; bearer-key success does not prove it.
-- [ ] Build combined artifact, inspect IAM/changeset and deploy workflow stack.
+- [x] Configure AWS deployment profile and verify account737876441172/us-east-1.
+- [x] Verify workshop-profile model access and deployed Lambda-role generation.
+- [x] Build combined artifact, inspect IAM/changeset and deploy workflow stack.
 - [ ] Hand StateMachineArn, WorkflowTableName and WorkflowTableArn to Ishani;
   send StateMachineArn to Mariam for the reset guard.
 - [ ] Complete three live reset/demo cycles plus denial, expiry, revocation and replay.
@@ -26,9 +26,12 @@ snapshots are scripted; the model outputs are live. Generation latency was
 These two calls do not establish a latency percentile, deployment-role access,
 real warehouse integration or a deployed Step Functions workflow.
 
-No AWS deployment credentials were available at the latest local check. No real
-workflow stack outputs exist. Mariam reports Phase4 deployed with Verified
-Permissions; the assistant has not independently verified her live deployment.
+AWS profile account and Nova access are verified. Stack sentinel-workflow-tishneet
+is CREATE_COMPLETE; actual outputs and API env/IAM additions are in deployment/.
+A live Step Functions denial probe reached VERIFIED_PERMISSIONS/LIMIT_EXCEEDED
+with real Bedrock and unchanged inventory/version1. The deployed ZIP hash matches
+the reviewed artifact. This independently exercises the live authorization path;
+approval-to-execution and reset walkthroughs remain joint acceptance work.
 
 ## Local integration boundaries
 
