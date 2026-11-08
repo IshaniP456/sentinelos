@@ -79,6 +79,14 @@ labeled preflight preset.
   revoke / reset all → **204**. Full D1 through the deployed path (Origin-stamped)
   → COMPLETED A17/B8/C8 v2 (`plan-a8748e6def5741a08da485094e7d840d`), reset → seed.
 
+## B1–B5 + redeploy (2026-11-08)
+- B1 README, B2 Measured section, B3 image panel (scripted preset → live text
+  rejection; live-upload hidden off-mock), B4 About "Why it matters", B5
+  `docs/demo-script.md` — all committed.
+- Frontend rebuilt (real mode) and redeployed to Amplify **job #6 → SUCCEED**.
+  Live bundle verified to contain the B4 copy, the B3 label, and the real API
+  host. Warehouse reset to seed (A20/B8/C5 v1) for the demo.
+
 ## A7 — three D1/D2/D3 runs through the deployed UI
 Backend + deployed-site network path are **verified** (A3–A5 by curl; A6
 Origin-stamped D1). The UI calls the exact same endpoints. **The three UI
