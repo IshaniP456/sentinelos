@@ -117,6 +117,145 @@ Resources:
         - {AttributeName: execution_id, KeyType: HASH}
       PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
 
+  # ------------------------------------------ Verified Permissions (Cedar)
+  # Single source of truth: backend/security/cedar/ (a test checks this copy matches).
+  PolicyStore:
+    Type: AWS::VerifiedPermissions::PolicyStore
+    Properties:
+      Description: SentinelOS inventory-agent authorization
+      ValidationSettings:
+        Mode: STRICT
+      Schema:
+        CedarJson: |
+          {
+            "Sentinel": {
+              "entityTypes": {
+                "Agent": {
+                  "shape": {
+                    "type": "Record",
+                    "attributes": {
+                      "status": {
+                        "type": "String"
+                      },
+                      "max_transfer": {
+                        "type": "Long"
+                      }
+                    }
+                  }
+                },
+                "Warehouse": {
+                  "shape": {
+                    "type": "Record",
+                    "attributes": {}
+                  }
+                }
+              },
+              "actions": {
+                "MovePackages": {
+                  "appliesTo": {
+                    "principalTypes": [
+                      "Agent"
+                    ],
+                    "resourceTypes": [
+                      "Warehouse"
+                    ],
+                    "context": {
+                      "type": "Record",
+                      "attributes": {
+                        "count": {
+                          "type": "Long"
+                        },
+                        "destination": {
+                          "type": "String"
+                        },
+                        "restricted_destination": {
+                          "type": "Boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+  AllowActiveWithinLimitPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !Ref PolicyStore
+      Definition:
+        Static:
+          Description: Active agent may move 1-10 packages per action (and within its max_transfer).
+          Statement: |
+            permit (
+              principal,
+              action == Sentinel::Action::"MovePackages",
+              resource
+            )
+            when {
+              principal.status == "ACTIVE" &&
+              context.count >= 1 &&
+              context.count <= 10 &&
+              context.count <= principal.max_transfer
+            };
+
+  ForbidRestrictedDestinationPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !Ref PolicyStore
+      Definition:
+        Static:
+          Description: Never move packages into HAZMAT or another restricted zone.
+          Statement: |
+            forbid (
+              principal,
+              action == Sentinel::Action::"MovePackages",
+              resource
+            )
+            when {
+              context.destination == "HAZMAT" || context.restricted_destination
+            };
+
+  ForbidInactiveAgentPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !Ref PolicyStore
+      Definition:
+        Static:
+          Description: Revoked or suspended agents may not move packages.
+          Statement: |
+            forbid (
+              principal,
+              action == Sentinel::Action::"MovePackages",
+              resource
+            )
+            unless {
+              principal.status == "ACTIVE"
+            };
+
+  AuthorizeFunction:
+    Type: AWS::Serverless::Function
+    DependsOn: [AllowActiveWithinLimitPolicy, ForbidRestrictedDestinationPolicy, ForbidInactiveAgentPolicy]
+    Properties:
+      FunctionName: sentinel-security-authorize
+      Handler: data.lambdas.authorize_handler
+      Environment:
+        Variables:
+          SENTINEL_AUTHZ_ENGINE: VERIFIED_PERMISSIONS
+          SENTINEL_POLICY_STORE_ID: !Ref PolicyStore
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource:
+                - !GetAtt WarehouseTable.Arn
+                - !GetAtt AgentsTable.Arn
+            - Effect: Allow
+              Action:
+                - verifiedpermissions:IsAuthorized
+                - verifiedpermissions:BatchIsAuthorized
+              Resource: !GetAtt PolicyStore.Arn
+
   # ------------------------------------------------- admin assertion secret
   AdminAssertionSecret:
     Type: AWS::SecretsManager::Secret
@@ -247,12 +386,22 @@ Resources:
 
   ExecuteFunction:
     Type: AWS::Serverless::Function
+    DependsOn: [AllowActiveWithinLimitPolicy, ForbidRestrictedDestinationPolicy, ForbidInactiveAgentPolicy]
     Properties:
       FunctionName: sentinel-data-execute
       Handler: data.lambdas.execute_handler
       Timeout: 15
+      Environment:
+        Variables:
+          SENTINEL_AUTHZ_ENGINE: VERIFIED_PERMISSIONS
+          SENTINEL_POLICY_STORE_ID: !Ref PolicyStore
       Policies:
         - Statement:
+            - Effect: Allow
+              Action:
+                - verifiedpermissions:IsAuthorized
+                - verifiedpermissions:BatchIsAuthorized
+              Resource: !GetAtt PolicyStore.Arn
             - Effect: Allow
               Action: dynamodb:GetItem
               Resource:
@@ -287,6 +436,12 @@ Outputs:
   ResetFnArn:
     Description: Ishani's ResetFn parameter
     Value: !GetAtt ResetFunction.Arn
+  AuthorizeFnArn:
+    Description: Workflow gateway authorize_plan (Verified Permissions)
+    Value: !GetAtt AuthorizeFunction.Arn
+  PolicyStoreId:
+    Description: Verified Permissions policy store with the Cedar policies
+    Value: !Ref PolicyStore
   RunIdFnArn:
     Description: Workflow gateway get_run_id
     Value: !GetAtt RunIdFunction.Arn

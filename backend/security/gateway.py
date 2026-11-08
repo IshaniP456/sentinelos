@@ -33,12 +33,12 @@ except ImportError:  # imported as security.gateway (backend/ on the path)
     from core.simulator import simulate_plan as _simulate_plan
 
 from .admin_assertion import sign
-from .authorization import authorize_plan as _local_authorize
 
 FUNCTIONS = {
     "warehouse": ("SENTINEL_FN_WAREHOUSE", "sentinel-data-warehouse"),
     "agent": ("SENTINEL_FN_AGENT", "sentinel-data-agent"),
     "runid": ("SENTINEL_FN_RUNID", "sentinel-data-runid"),
+    "authorize": ("SENTINEL_FN_AUTHORIZE", "sentinel-security-authorize"),
     "execute": ("SENTINEL_FN_EXECUTE", "sentinel-data-execute"),
     "audit_append": ("SENTINEL_FN_AUDIT_APPEND", "sentinel-data-audit-append"),
     "revoke": ("SENTINEL_FN_REVOKE", "sentinel-data-revoke"),
@@ -99,24 +99,26 @@ class TrustedGateway:
     # ------------------------------------------------- decisions (no writes)
 
     def authorize_plan(self, plan: Any) -> dict[str, Any]:
-        """Per-action decisions from the CURRENT trusted agent record. Any failure denies.
+        """Per-action decisions from Amazon Verified Permissions, via sentinel-security-authorize.
 
-        Uses the labeled local policy until Verified Permissions lands; the
-        executor re-authorizes at commit time regardless.
+        Uses the CURRENT trusted agent record. Any failure or malformed response
+        denies every action. The executor re-authorizes at commit time regardless.
         """
+        actions = plan.get("actions") if isinstance(plan, Mapping) else None
         try:
-            agent = self.get_agent()
-            restricted = self.get_warehouse().get("restricted_zones", [])
+            result = self._invoke("authorize", {"plan": plan})
         except Exception:
-            actions = plan.get("actions") if isinstance(plan, Mapping) else None
-            count = len(actions) if isinstance(actions, list) and actions else 1
-            return {
-                "allowed": False,
-                "decisions": [{"action_index": i, "allowed": False, "reason_code": "AUTHORIZATION_ERROR"}
-                              for i in range(count)],
-                "engine": "LOCAL_POLICY",
-            }
-        return _local_authorize(plan, agent, restricted)
+            result = None
+        if (isinstance(result, dict) and isinstance(result.get("allowed"), bool)
+                and isinstance(result.get("decisions"), list) and result["decisions"]):
+            return result
+        count = len(actions) if isinstance(actions, list) and actions else 1
+        return {
+            "allowed": False,
+            "decisions": [{"action_index": i, "allowed": False, "reason_code": "AUTHORIZATION_ERROR"}
+                          for i in range(count)],
+            "engine": "UNAVAILABLE",
+        }
 
     def simulate_plan(self, plan: Any, warehouse: Any) -> dict[str, Any]:
         return _simulate_plan(plan, warehouse)

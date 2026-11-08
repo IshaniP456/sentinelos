@@ -27,6 +27,7 @@ ROUTES = {
     "runid": lambdas.runid_handler,
     "execute": lambdas.execute_handler,
     "audit_append": lambdas.audit_append_handler,
+    "authorize": lambdas.authorize_handler,
     "revoke": lambdas.revoke_handler,
     "reset": lambdas.reset_handler,
 }

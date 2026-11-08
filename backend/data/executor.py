@@ -7,8 +7,8 @@ writing, re-checks everything against current trusted state:
   1. Replay: a committed (plan_id, revision) returns its original result.
   2. Run identity and warehouse version must match what was evaluated.
   3. Plan structure (via the simulator's structural pass).
-  4. Authorization with the CURRENT agent record (labeled local policy until
-     Verified Permissions lands in Phase 4).
+  4. Authorization with the CURRENT agent record (Verified Permissions in
+     the deployed Lambda; labeled local policy only where configured).
   5. Approval for ELEVATED plans (total >= 5): APPROVED and bound to the same
      revision, fingerprint, warehouse version, and run.
   6. Simulation against CURRENT inventory.
@@ -39,7 +39,7 @@ from core.simulator import simulate_plan
 from data import dynamo
 from data.dynamo import _aws, _aws_code, _build_audit_event, _from_dynamo, _table, _to_dynamo, audit_item
 from data.schema import DEFAULT_WAREHOUSE_ID, DEMO_AGENT_ID, table_names
-from security.authorization import authorize_plan
+from security.authorization import authorize
 
 APPROVAL_THRESHOLD = 5
 STRUCTURAL_CODES = frozenset({"INVALID_PLAN", "INVALID_ACTION", "INVALID_COUNT", "INVALID_WAREHOUSE_STATE"})
@@ -84,7 +84,8 @@ def execute_plan(
         return _no_commit(plan_id, revision, "PLAN_VALIDATION_FAILED", structural[0]["message"],
                           violations=structural)
 
-    authorization = authorize_plan(plan, agent, warehouse.get("restricted_zones"))
+    authorization = authorize(plan, agent, warehouse.get("restricted_zones"),
+                              agent_id=agent_id, warehouse_id=warehouse["warehouse_id"])
     if not authorization["allowed"]:
         denied = next(d for d in authorization["decisions"] if not d["allowed"])
         return _no_commit(plan_id, revision, "AUTHORIZATION_DENIED",

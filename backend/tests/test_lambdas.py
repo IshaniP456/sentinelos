@@ -25,6 +25,7 @@ HANDLERS = [
     lambdas.runid_handler,
     lambdas.execute_handler,
     lambdas.audit_append_handler,
+    lambdas.authorize_handler,
 ]
 
 

@@ -139,7 +139,7 @@ Building it makes no AWS calls and never loads the signing key.
 |---|---|
 | `get_warehouse()`, `get_agent()` | invoke `sentinel-data-warehouse` / `sentinel-data-agent` |
 | `get_run_id()` | invoke `sentinel-data-runid`, returns a non-empty string |
-| `authorize_plan(plan)` | current agent via Lambda + `security.authorization` (`engine: LOCAL_POLICY` until Verified Permissions); any read failure denies every action |
+| `authorize_plan(plan)` | invoke `sentinel-security-authorize` → Amazon Verified Permissions (`engine: VERIFIED_PERMISSIONS`) with the current agent record; any failure or malformed reply denies every action |
 | `simulate_plan(plan, warehouse)` | in-process `backend.core.simulator` |
 | `execute_plan(**six fields)` | invoke `sentinel-data-execute`; response returned unchanged; transport failure raises |
 | `append_audit(event)` | invoke `sentinel-data-audit-append` → `{"recorded": true, "duplicate": bool}` |
@@ -149,5 +149,22 @@ Building it makes no AWS calls and never loads the signing key.
 Errors from read/admin calls raise `security.gateway.GatewayError(code, message, retryable)`.
 Function names can be overridden with `SENTINEL_FN_<WAREHOUSE|AGENT|RUNID|EXECUTE|AUDIT_APPEND|REVOKE|RESET>`.
 
-Invoke permissions: the workflow role needs warehouse, agent, runid, execute, audit-append.
+Invoke permissions: the workflow role needs warehouse, agent, runid, execute, audit-append, and `sentinel-security-authorize`.
 Ishani's API role (where revoke/reset/approval run) needs warehouse, agent, audit, runid, revoke, reset, and the secret.
+
+## Authorization (Phase 4) — Amazon Verified Permissions + Cedar
+
+Policies and schema live in `backend/security/cedar/` (single source; the template embeds the same text and a test checks they match).
+
+| Policy | Rule |
+|---|---|
+| `allow_active_within_limit` | permit `MovePackages` when status is `ACTIVE` and 1 ≤ count ≤ 10 and count ≤ the agent's `max_transfer` |
+| `forbid_restricted_destination` | forbid when destination is `HAZMAT` or a restricted zone |
+| `forbid_inactive_agent` | forbid unless status is `ACTIVE` (revoked/suspended) |
+
+Principal `Sentinel::Agent::"inventory-agent-01"` with `status`/`max_transfer` read from DynamoDB at call time; resource `Sentinel::Warehouse::"demo-warehouse"`; context `count`, `destination`, `restricted_destination`.
+One `BatchIsAuthorized` call per plan. The deployed executor and `sentinel-security-authorize` run with
+`SENTINEL_AUTHZ_ENGINE=VERIFIED_PERMISSIONS`; errors, missing attributes or mismatched results deny every action
+(no fallback). Reason codes (`POLICY_ALLOWED`, `LIMIT_EXCEEDED`, `RESTRICTED_DESTINATION`, `AGENT_REVOKED`, `AGENT_SUSPENDED`,
+`AUTHORIZATION_ERROR`) come from the local policy's explanation; if Verified Permissions ever allows what the local policy
+denies, the action is denied. Tests evaluate the real policy files with cedarpy (`--with cedarpy`; skipped if absent).

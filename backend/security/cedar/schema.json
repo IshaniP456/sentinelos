@@ -1,0 +1,34 @@
+{
+  "Sentinel": {
+    "entityTypes": {
+      "Agent": {
+        "shape": {
+          "type": "Record",
+          "attributes": {
+            "status": {"type": "String"},
+            "max_transfer": {"type": "Long"}
+          }
+        }
+      },
+      "Warehouse": {
+        "shape": {"type": "Record", "attributes": {}}
+      }
+    },
+    "actions": {
+      "MovePackages": {
+        "appliesTo": {
+          "principalTypes": ["Agent"],
+          "resourceTypes": ["Warehouse"],
+          "context": {
+            "type": "Record",
+            "attributes": {
+              "count": {"type": "Long"},
+              "destination": {"type": "String"},
+              "restricted_destination": {"type": "Boolean"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

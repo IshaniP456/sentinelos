@@ -133,6 +133,28 @@ def reset_handler(event: Any, context: Any = None) -> dict[str, Any]:
     return _run("reset", work)
 
 
+def authorize_handler(event: Any, context: Any = None) -> dict[str, Any]:
+    """Authorize every action of ``{"plan": PlanActions}`` for the configured agent.
+
+    Always returns an AuthorizationResult (never an error object). Any failure,
+    including DynamoDB or Verified Permissions errors, denies every action.
+    """
+    from security.authorization import authorize
+    from security.avp import deny_all
+
+    plan = _payload(event).get("plan")
+    actions = plan.get("actions") if isinstance(plan, Mapping) else None
+    try:
+        agent = dynamo.get_agent(_agent_id())
+        warehouse = dynamo.get_warehouse(_warehouse_id())
+        return authorize(plan, agent, warehouse.get("restricted_zones"),
+                         agent_id=_agent_id(), warehouse_id=_warehouse_id())
+    except Exception:
+        logger.exception("authorize: failed; denying every action")
+        return deny_all(actions, "AUTHORIZATION_ERROR",
+                        engine=os.environ.get("SENTINEL_AUTHZ_ENGINE", "LOCAL_POLICY"))
+
+
 def runid_handler(event: Any, context: Any = None) -> dict[str, Any]:
     """Return ``{"run_id": str}``, the current demo-run identity (rotates on reset)."""
     return _run("runid", lambda: {"run_id": dynamo.get_run_id(_warehouse_id())})
