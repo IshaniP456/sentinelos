@@ -1,0 +1,6 @@
+{
+  "actions": [
+    {"type": "move_packages", "from": "A", "to": "B", "count": 2},
+    {"type": "move_packages", "from": "A", "to": "B", "count": 1}
+  ]
+}
